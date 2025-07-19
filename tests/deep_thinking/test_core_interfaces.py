@@ -1,331 +1,405 @@
 """
-Tests for core interfaces and data models
+Test suite for Task 1: Core Interfaces and Data Models
+
+Tests the fundamental components of the zero-cost MCP Server architecture.
 """
 
-import pytest
-import asyncio
-from datetime import datetime
-from typing import Dict, Any
+import sys
+from pathlib import Path
 
-from mcps.deep_thinking.models.agent_models import (
-    AgentInput, AgentOutput, AgentConfig, AgentMetadata, 
-    AgentType, AgentStatus, AgentExecutionContext
+# Add src to path
+sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
+
+from mcps.deep_thinking.models.mcp_models import (
+    StartThinkingInput, NextStepInput, AnalyzeStepInput, CompleteThinkingInput,
+    MCPToolOutput, MCPToolName, SessionState
 )
-from mcps.deep_thinking.models.thinking_models import (
-    ThinkingSession, QuestionDecomposition, SubQuestion, 
-    ComplexityLevel, Priority
-)
-from mcps.deep_thinking.agents.base_agent import BaseAgent, AgentFactory
-from mcps.deep_thinking.config.exceptions import (
-    AgentValidationError, AgentExecutionError
-)
+from mcps.deep_thinking.sessions.session_manager import SessionManager
+from mcps.deep_thinking.templates.template_manager import TemplateManager
+from mcps.deep_thinking.flows.flow_manager import FlowManager
+from mcps.deep_thinking.tools.mcp_tools import MCPTools
+from mcps.deep_thinking.config.exceptions import DeepThinkingError
 
 
-class TestAgent(BaseAgent):
-    """Test agent implementation for testing"""
+class TestMCPModels:
+    """Test MCP data models"""
     
-    def get_metadata(self) -> AgentMetadata:
-        return AgentMetadata(
-            agent_type=AgentType.DECOMPOSER,
-            name="Test Agent",
-            description="A test agent for unit testing",
-            version="1.0.0",
-            required_inputs=["test_input"],
-            output_schema={"type": "object"}
+    def test_start_thinking_input(self):
+        """Test StartThinkingInput model"""
+        input_data = StartThinkingInput(
+            topic="如何提高学习效率？",
+            complexity="moderate",
+            focus="学生群体"
         )
+        
+        assert input_data.topic == "如何提高学习效率？"
+        assert input_data.complexity == "moderate"
+        assert input_data.focus == "学生群体"
+        assert input_data.flow_type == "comprehensive_analysis"  # default
     
-    def get_default_config(self) -> AgentConfig:
-        return AgentConfig(
-            agent_type=AgentType.DECOMPOSER,
-            enabled=True,
-            max_retries=3,
-            timeout_seconds=30,
-            temperature=0.7
+    def test_mcp_tool_output(self):
+        """Test MCPToolOutput model"""
+        output = MCPToolOutput(
+            tool_name=MCPToolName.START_THINKING,
+            prompt_template="Test template: {topic}",
+            instructions="Test instructions"
         )
+        
+        assert output.tool_name == MCPToolName.START_THINKING
+        assert "Test template" in output.prompt_template
+        assert output.instructions == "Test instructions"
+        assert output.session_id is None  # optional field
     
-    async def _execute_internal(
-        self, 
-        input_data: AgentInput, 
-        context: AgentExecutionContext,
-        interaction_id: str
-    ) -> AgentOutput:
-        # Simple test implementation
-        return AgentOutput(
-            agent_type=self.agent_type,
-            session_id=input_data.session_id,
-            interaction_id=interaction_id,
-            status=AgentStatus.COMPLETED,
-            data={"result": "test_success", "input_received": input_data.data},
-            quality_score=0.9
+    def test_session_state(self):
+        """Test SessionState model"""
+        session = SessionState(
+            session_id="test-session",
+            topic="Test topic",
+            current_step="test_step",
+            flow_type="test_flow"
         )
+        
+        assert session.session_id == "test-session"
+        assert session.topic == "Test topic"
+        assert session.current_step == "test_step"
+        assert session.flow_type == "test_flow"
+        assert session.status == "active"  # default
 
 
-class TestFailingAgent(BaseAgent):
-    """Test agent that always fails"""
+class TestSessionManager:
+    """Test session management system"""
     
-    def get_metadata(self) -> AgentMetadata:
-        return AgentMetadata(
-            agent_type=AgentType.CRITIC,
-            name="Failing Test Agent",
-            description="A test agent that always fails",
-            version="1.0.0",
-            required_inputs=["test_input"],
-            output_schema={"type": "object"}
+    def setup_method(self):
+        """Setup test session manager"""
+        self.session_manager = SessionManager(':memory:')
+    
+    def test_create_and_get_session(self):
+        """Test session creation and retrieval"""
+        session_state = SessionState(
+            session_id="test-001",
+            topic="Test topic",
+            current_step="initial_step",
+            flow_type="test_flow"
         )
+        
+        # Create session
+        session_id = self.session_manager.create_session(session_state)
+        assert session_id == "test-001"
+        
+        # Retrieve session
+        retrieved = self.session_manager.get_session(session_id)
+        assert retrieved is not None
+        assert retrieved.topic == "Test topic"
+        assert retrieved.current_step == "initial_step"
     
-    def get_default_config(self) -> AgentConfig:
-        return AgentConfig(
-            agent_type=AgentType.CRITIC,
-            enabled=True,
-            max_retries=1,
-            timeout_seconds=30
+    def test_update_session_step(self):
+        """Test session step updates"""
+        session_state = SessionState(
+            session_id="test-002",
+            topic="Test topic",
+            current_step="step1",
+            flow_type="test_flow"
         )
+        
+        self.session_manager.create_session(session_state)
+        
+        # Update step
+        self.session_manager.update_session_step("test-002", "step2")
+        
+        # Verify update
+        updated = self.session_manager.get_session("test-002")
+        assert updated.current_step == "step2"
+        assert updated.step_number == 1  # incremented
     
-    async def _execute_internal(
-        self, 
-        input_data: AgentInput, 
-        context: AgentExecutionContext,
-        interaction_id: str
-    ) -> AgentOutput:
-        raise Exception("Test failure")
+    def test_add_step_result(self):
+        """Test adding step results"""
+        session_state = SessionState(
+            session_id="test-003",
+            topic="Test topic",
+            current_step="step1",
+            flow_type="test_flow"
+        )
+        
+        self.session_manager.create_session(session_state)
+        
+        # Add step result
+        self.session_manager.add_step_result(
+            "test-003", 
+            "step1", 
+            "Step completed successfully",
+            quality_score=0.85
+        )
+        
+        # Verify result was added
+        session = self.session_manager.get_session("test-003")
+        assert "step1" in session.step_results
+        assert session.step_results["step1"]["result"] == "Step completed successfully"
+        assert session.step_results["step1"]["quality_score"] == 0.85
 
 
-class TestDataModels:
-    """Test Pydantic data models"""
+class TestTemplateManager:
+    """Test template management system"""
     
-    def test_agent_input_creation(self):
-        """Test AgentInput model creation and validation"""
-        agent_input = AgentInput(
-            session_id="test_session_123",
-            agent_type=AgentType.DECOMPOSER,
-            data={"question": "What is the meaning of life?"},
-            context={"user_id": "test_user"}
-        )
-        
-        assert agent_input.session_id == "test_session_123"
-        assert agent_input.agent_type == AgentType.DECOMPOSER
-        assert agent_input.data["question"] == "What is the meaning of life?"
-        assert agent_input.context["user_id"] == "test_user"
+    def setup_method(self):
+        """Setup test template manager"""
+        self.template_manager = TemplateManager()
     
-    def test_agent_output_creation(self):
-        """Test AgentOutput model creation"""
-        agent_output = AgentOutput(
-            agent_type=AgentType.DECOMPOSER,
-            session_id="test_session_123",
-            interaction_id="interaction_456",
-            status=AgentStatus.COMPLETED,
-            data={"result": "success"},
-            quality_score=0.85,
-            execution_time=2.5
-        )
+    def test_get_decomposition_template(self):
+        """Test decomposition template rendering"""
+        template = self.template_manager.get_template('decomposition', {
+            'topic': '如何提高学习效率？',
+            'complexity': 'moderate',
+            'focus': '学生群体',
+            'domain_context': '教育'
+        })
         
-        assert agent_output.agent_type == AgentType.DECOMPOSER
-        assert agent_output.status == AgentStatus.COMPLETED
-        assert agent_output.quality_score == 0.85
-        assert agent_output.execution_time == 2.5
-        assert isinstance(agent_output.timestamp, datetime)
+        assert '如何提高学习效率？' in template
+        assert 'moderate' in template
+        assert '学生群体' in template
+        assert 'JSON格式' in template
     
-    def test_thinking_session_creation(self):
-        """Test ThinkingSession model creation"""
-        session = ThinkingSession(
-            id="session_123",
-            topic="Test thinking session",
-            user_id="user_456"
-        )
+    def test_get_evidence_template(self):
+        """Test evidence collection template"""
+        template = self.template_manager.get_template('evidence_collection', {
+            'sub_question': '什么是有效的学习方法？',
+            'keywords': ['学习方法', '效率', '记忆'],
+            'context': '学生学习'
+        })
         
-        assert session.id == "session_123"
-        assert session.topic == "Test thinking session"
-        assert session.user_id == "user_456"
-        assert isinstance(session.start_time, datetime)
-        assert len(session.thinking_traces) == 0
+        assert '什么是有效的学习方法？' in template
+        assert 'Web搜索' in template
+        assert '证据收集' in template
     
-    def test_question_decomposition_creation(self):
-        """Test QuestionDecomposition model creation"""
-        sub_question = SubQuestion(
-            id="sub_1",
-            question="What are the philosophical implications?",
-            priority=Priority.HIGH,
-            search_keywords=["philosophy", "implications"],
-            expected_perspectives=["existentialist", "pragmatic"],
-            estimated_complexity=ComplexityLevel.COMPLEX
-        )
+    def test_list_templates(self):
+        """Test template listing"""
+        templates = self.template_manager.list_templates()
         
-        decomposition = QuestionDecomposition(
-            main_question="What is the meaning of life?",
-            complexity_assessment=ComplexityLevel.COMPLEX,
-            sub_questions=[sub_question],
-            decomposition_strategy="philosophical_analysis"
-        )
-        
-        assert decomposition.main_question == "What is the meaning of life?"
-        assert decomposition.complexity_assessment == ComplexityLevel.COMPLEX
-        assert len(decomposition.sub_questions) == 1
-        assert decomposition.sub_questions[0].priority == Priority.HIGH
+        assert len(templates) > 0
+        assert 'decomposition' in templates
+        assert 'evidence_collection' in templates
+        assert 'critical_evaluation' in templates
 
 
-class TestBaseAgent:
-    """Test BaseAgent functionality"""
+class TestFlowManager:
+    """Test flow management system"""
     
-    @pytest.fixture
-    def test_agent(self):
-        """Create a test agent instance"""
-        return TestAgent()
+    def setup_method(self):
+        """Setup test flow manager"""
+        self.flow_manager = FlowManager()
     
-    @pytest.fixture
-    def failing_agent(self):
-        """Create a failing test agent instance"""
-        return TestFailingAgent()
-    
-    @pytest.fixture
-    def agent_input(self):
-        """Create test agent input"""
-        return AgentInput(
-            session_id="test_session_123",
-            agent_type=AgentType.DECOMPOSER,
-            data={"test_input": "test_value"}
-        )
-    
-    @pytest.fixture
-    def execution_context(self):
-        """Create test execution context"""
-        return AgentExecutionContext(
-            session_id="test_session_123",
-            flow_step=1,
-            execution_mode="test"
-        )
-    
-    def test_agent_metadata(self, test_agent):
-        """Test agent metadata retrieval"""
-        metadata = test_agent.get_metadata()
+    def test_list_flows(self):
+        """Test flow listing"""
+        flows = self.flow_manager.list_flows()
         
-        assert metadata.agent_type == AgentType.DECOMPOSER
-        assert metadata.name == "Test Agent"
-        assert "test_input" in metadata.required_inputs
+        assert len(flows) > 0
+        assert 'comprehensive_analysis' in flows
+        assert 'quick_analysis' in flows
     
-    def test_agent_default_config(self, test_agent):
-        """Test agent default configuration"""
-        config = test_agent.get_default_config()
+    def test_get_flow_info(self):
+        """Test flow information retrieval"""
+        flow_info = self.flow_manager.get_flow_info('comprehensive_analysis')
         
-        assert config.agent_type == AgentType.DECOMPOSER
-        assert config.enabled is True
-        assert config.max_retries == 3
-        assert config.timeout_seconds == 30
+        assert flow_info is not None
+        assert flow_info['name'] == 'comprehensive_analysis'
+        assert flow_info['total_steps'] > 0
+        assert 'steps' in flow_info
     
-    @pytest.mark.asyncio
-    async def test_successful_agent_execution(self, test_agent, agent_input, execution_context):
-        """Test successful agent execution"""
-        output = await test_agent.execute(agent_input, execution_context)
-        
-        assert output.status == AgentStatus.COMPLETED
-        assert output.data["result"] == "test_success"
-        assert output.data["input_received"] == agent_input.data
-        assert output.quality_score == 0.9
-        assert output.execution_time is not None
-        assert output.execution_time > 0
-    
-    @pytest.mark.asyncio
-    async def test_agent_execution_failure(self, failing_agent, execution_context):
-        """Test agent execution failure handling"""
-        # Create input with correct agent type for the failing agent
-        failing_agent_input = AgentInput(
-            session_id="test_session_123",
-            agent_type=AgentType.CRITIC,  # Correct type for failing agent
-            data={"test_input": "test_value"}
+    def test_get_next_step(self):
+        """Test next step logic"""
+        next_step = self.flow_manager.get_next_step(
+            'comprehensive_analysis',
+            'decompose_problem',
+            '{"sub_questions": [{"id": "sq1"}]}'
         )
         
-        with pytest.raises(AgentExecutionError):
-            await failing_agent.execute(failing_agent_input, execution_context)
-        
-        # Check that failure was recorded in history
-        history = failing_agent.get_execution_history()
-        assert len(history) == 1
-        assert history[0].status == AgentStatus.FAILED
-        assert history[0].error_message is not None
-    
-    @pytest.mark.asyncio
-    async def test_agent_input_validation(self, test_agent, execution_context):
-        """Test agent input validation"""
-        # Test with wrong agent type
-        invalid_input = AgentInput(
-            session_id="test_session_123",
-            agent_type=AgentType.CRITIC,  # Wrong type
-            data={"test_input": "test_value"}
-        )
-        
-        with pytest.raises(AgentValidationError):
-            await test_agent.execute(invalid_input, execution_context)
-    
-    def test_agent_performance_metrics(self, test_agent):
-        """Test agent performance metrics calculation"""
-        # Initially no metrics
-        metrics = test_agent.get_performance_metrics()
-        assert metrics == {}
-        
-        # Add some mock execution history
-        test_agent.execution_history = [
-            AgentOutput(
-                agent_type=AgentType.DECOMPOSER,
-                session_id="test",
-                interaction_id="1",
-                status=AgentStatus.COMPLETED,
-                data={},
-                execution_time=1.0,
-                quality_score=0.8
-            ),
-            AgentOutput(
-                agent_type=AgentType.DECOMPOSER,
-                session_id="test",
-                interaction_id="2",
-                status=AgentStatus.FAILED,
-                data={},
-                execution_time=0.5,
-                error_message="Test error"
-            )
-        ]
-        
-        metrics = test_agent.get_performance_metrics()
-        assert metrics['total_executions'] == 2
-        assert metrics['successful_executions'] == 1
-        assert metrics['failed_executions'] == 1
-        assert metrics['success_rate'] == 0.5
-        assert metrics['average_execution_time'] == 1.0
-        assert metrics['average_quality_score'] == 0.8
+        assert next_step is not None
+        assert next_step['step_name'] == 'collect_evidence'
+        assert 'template_name' in next_step
+        assert 'instructions' in next_step
 
 
-class TestAgentFactory:
-    """Test AgentFactory functionality"""
+class TestMCPTools:
+    """Test MCP tools integration"""
     
-    def test_agent_registration(self):
-        """Test agent registration with factory"""
-        AgentFactory.register_agent(AgentType.DECOMPOSER, TestAgent)
-        
-        assert AgentFactory.is_registered(AgentType.DECOMPOSER)
-        assert AgentType.DECOMPOSER in AgentFactory.get_registered_types()
+    def setup_method(self):
+        """Setup test MCP tools"""
+        self.session_manager = SessionManager(':memory:')
+        self.template_manager = TemplateManager()
+        self.flow_manager = FlowManager()
+        self.mcp_tools = MCPTools(
+            self.session_manager,
+            self.template_manager,
+            self.flow_manager
+        )
     
-    def test_agent_creation(self):
-        """Test agent creation through factory"""
-        AgentFactory.register_agent(AgentType.DECOMPOSER, TestAgent)
-        
-        agent = AgentFactory.create_agent(AgentType.DECOMPOSER)
-        
-        assert isinstance(agent, TestAgent)
-        assert agent.agent_type == AgentType.DECOMPOSER
-    
-    def test_agent_creation_with_config(self):
-        """Test agent creation with custom config"""
-        AgentFactory.register_agent(AgentType.DECOMPOSER, TestAgent)
-        
-        custom_config = AgentConfig(
-            agent_type=AgentType.DECOMPOSER,
-            temperature=0.5,
-            max_retries=5
+    def test_start_thinking(self):
+        """Test start_thinking MCP tool"""
+        input_data = StartThinkingInput(
+            topic="如何提高团队协作效率？",
+            complexity="complex",
+            focus="远程工作"
         )
         
-        agent = AgentFactory.create_agent(AgentType.DECOMPOSER, custom_config)
+        result = self.mcp_tools.start_thinking(input_data)
         
-        assert agent.config.temperature == 0.5
-        assert agent.config.max_retries == 5
+        assert result.tool_name == MCPToolName.START_THINKING
+        assert result.session_id is not None
+        assert result.step == "decompose_problem"
+        assert len(result.prompt_template) > 0
+        assert "如何提高团队协作效率？" in result.prompt_template
+        assert result.next_action is not None
+    
+    def test_next_step(self):
+        """Test next_step MCP tool"""
+        # First create a session
+        start_input = StartThinkingInput(
+            topic="测试问题",
+            complexity="moderate"
+        )
+        start_result = self.mcp_tools.start_thinking(start_input)
+        
+        # Then test next step
+        next_input = NextStepInput(
+            session_id=start_result.session_id,
+            step_result='{"sub_questions": [{"id": "sq1", "question": "子问题1"}]}'
+        )
+        
+        result = self.mcp_tools.next_step(next_input)
+        
+        assert result.tool_name == MCPToolName.NEXT_STEP
+        assert result.session_id == start_result.session_id
+        assert result.step is not None
+        assert len(result.prompt_template) > 0
+    
+    def test_analyze_step(self):
+        """Test analyze_step MCP tool"""
+        # Create a session first
+        start_input = StartThinkingInput(topic="测试问题")
+        start_result = self.mcp_tools.start_thinking(start_input)
+        
+        # Test analyze step
+        analyze_input = AnalyzeStepInput(
+            session_id=start_result.session_id,
+            step_name="decompose_problem",
+            step_result="问题分解完成"
+        )
+        
+        result = self.mcp_tools.analyze_step(analyze_input)
+        
+        assert result.tool_name == MCPToolName.ANALYZE_STEP
+        assert result.session_id == start_result.session_id
+        assert "analyze_" in result.step
+        assert len(result.prompt_template) > 0
+    
+    def test_complete_thinking(self):
+        """Test complete_thinking MCP tool"""
+        # Create a session first
+        start_input = StartThinkingInput(topic="测试问题")
+        start_result = self.mcp_tools.start_thinking(start_input)
+        
+        # Test complete thinking
+        complete_input = CompleteThinkingInput(
+            session_id=start_result.session_id,
+            final_insights="测试洞察"
+        )
+        
+        result = self.mcp_tools.complete_thinking(complete_input)
+        
+        assert result.tool_name == MCPToolName.COMPLETE_THINKING
+        assert result.session_id == start_result.session_id
+        assert result.step == "generate_final_report"
+        assert len(result.prompt_template) > 0
+
+
+class TestErrorHandling:
+    """Test error handling and exceptions"""
+    
+    def test_deep_thinking_error(self):
+        """Test DeepThinkingError exception"""
+        error = DeepThinkingError(
+            "Test error message",
+            error_code="TEST_001",
+            details={"test": True}
+        )
+        
+        assert str(error) == "Test error message"
+        assert error.error_code == "TEST_001"
+        assert error.details["test"] is True
+        
+        # Test serialization
+        error_dict = error.to_dict()
+        assert error_dict["error_type"] == "DeepThinkingError"
+        assert error_dict["message"] == "Test error message"
+        assert error_dict["error_code"] == "TEST_001"
+    
+    def test_session_not_found_handling(self):
+        """Test handling of non-existent sessions"""
+        session_manager = SessionManager(':memory:')
+        template_manager = TemplateManager()
+        flow_manager = FlowManager()
+        mcp_tools = MCPTools(session_manager, template_manager, flow_manager)
+        
+        # Test next_step with non-existent session
+        next_input = NextStepInput(
+            session_id="non-existent-session",
+            step_result="test result"
+        )
+        
+        result = mcp_tools.next_step(next_input)
+        
+        # Should return session recovery prompt
+        assert result.step == "session_recovery"
+        assert "会话恢复" in result.prompt_template
+
+
+def run_tests():
+    """Simple test runner without pytest"""
+    test_classes = [
+        TestMCPModels,
+        TestSessionManager,
+        TestTemplateManager,
+        TestFlowManager,
+        TestMCPTools,
+        TestErrorHandling
+    ]
+    
+    total_tests = 0
+    passed_tests = 0
+    
+    print("🧪 Running Task 1 Core Interface Tests")
+    print("=" * 50)
+    
+    for test_class in test_classes:
+        print(f"\n📋 {test_class.__name__}")
+        instance = test_class()
+        
+        # Setup if method exists
+        if hasattr(instance, 'setup_method'):
+            instance.setup_method()
+        
+        # Run all test methods
+        for method_name in dir(instance):
+            if method_name.startswith('test_'):
+                total_tests += 1
+                try:
+                    method = getattr(instance, method_name)
+                    method()
+                    print(f"  ✅ {method_name}")
+                    passed_tests += 1
+                except Exception as e:
+                    print(f"  ❌ {method_name}: {e}")
+    
+    print("\n" + "=" * 50)
+    print(f"🎯 Test Results: {passed_tests}/{total_tests} tests passed")
+    
+    if passed_tests == total_tests:
+        print("🎉 All tests passed!")
+        return True
+    else:
+        print("❌ Some tests failed")
+        return False
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
+    success = run_tests()
+    exit(0 if success else 1)

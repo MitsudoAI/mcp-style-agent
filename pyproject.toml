@@ -71,6 +71,7 @@ target-version = "py312"
 
 [dependency-groups]
 dev = [
+    "cryptography>=45.0.5",
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
 ]

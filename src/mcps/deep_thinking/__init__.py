@@ -5,40 +5,25 @@ A sophisticated MCP-based system for deep thinking and critical analysis,
 combining multiple AI agents with scientific thinking methodologies.
 """
 
-from .models import *
-from .agents import BaseAgent, AgentInterface, AgentRegistry
-from .config import ConfigManager, FlowConfigManager, config_manager, flow_config_manager
-
 __version__ = "0.1.0"
 
-__all__ = [
-    # Core Models
-    'AgentInput',
-    'AgentOutput', 
-    'AgentConfig',
-    'AgentMetadata',
-    'ThinkingSession',
-    'ThinkingTrace',
-    'QuestionDecomposition',
-    'SubQuestion',
-    'EvidenceSource',
-    'EvidenceCollection',
-    'SearchQuery',
-    'ConflictingInformation',
-    'PaulElderEvaluation',
-    'BiasAnalysis',
-    'DebateResults',
-    'InnovationResults',
-    'ReflectionGuidance',
-    
-    # Agent Framework
-    'BaseAgent',
-    'AgentInterface',
-    'AgentRegistry',
-    
-    # Configuration Management
-    'ConfigManager',
-    'FlowConfigManager',
-    'config_manager',
-    'flow_config_manager',
-]
+# Lazy imports to avoid dependency issues
+def get_mcp_tools():
+    """Get MCP tools - lazy import to avoid dependency issues"""
+    from .tools.mcp_tools import MCPTools
+    return MCPTools
+
+def get_session_manager():
+    """Get session manager - lazy import"""
+    from .sessions.session_manager import SessionManager
+    return SessionManager
+
+def get_template_manager():
+    """Get template manager - lazy import"""
+    from .templates.template_manager import TemplateManager
+    return TemplateManager
+
+def get_flow_manager():
+    """Get flow manager - lazy import"""
+    from .flows.flow_manager import FlowManager
+    return FlowManager

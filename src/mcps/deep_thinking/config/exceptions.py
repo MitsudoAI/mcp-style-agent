@@ -191,3 +191,54 @@ class ReflectionError(DeepThinkingError):
         self.reflection_type = reflection_type
         if reflection_type:
             self.details['reflection_type'] = reflection_type
+
+
+class SessionError(DeepThinkingError):
+    """Base class for session-related errors"""
+    
+    def __init__(self, message: str, session_id: str = None, **kwargs):
+        super().__init__(message, **kwargs)
+        self.session_id = session_id
+        if session_id:
+            self.details['session_id'] = session_id
+
+
+class SessionNotFoundError(SessionError):
+    """Raised when a requested session is not found"""
+    pass
+
+
+class SessionStateError(SessionError):
+    """Raised when there are session state-related errors"""
+    
+    def __init__(self, message: str, current_state: str = None, expected_state: str = None, **kwargs):
+        super().__init__(message, **kwargs)
+        self.current_state = current_state
+        self.expected_state = expected_state
+        if current_state:
+            self.details['current_state'] = current_state
+        if expected_state:
+            self.details['expected_state'] = expected_state
+
+
+class SessionTimeoutError(SessionError):
+    """Raised when a session times out"""
+    
+    def __init__(self, message: str, timeout_seconds: int = None, **kwargs):
+        super().__init__(message, **kwargs)
+        self.timeout_seconds = timeout_seconds
+        if timeout_seconds:
+            self.details['timeout_seconds'] = timeout_seconds
+
+
+class DatabaseError(DeepThinkingError):
+    """Raised when database operations fail"""
+    
+    def __init__(self, message: str, operation: str = None, table: str = None, **kwargs):
+        super().__init__(message, **kwargs)
+        self.operation = operation
+        self.table = table
+        if operation:
+            self.details['operation'] = operation
+        if table:
+            self.details['table'] = table
