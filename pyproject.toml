@@ -1,0 +1,70 @@
+[project]
+name = "mcp-style-agent"
+version = "0.1.0"
+description = "A collection of local MCP-style agents for cognitive enhancement and deep thinking"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0.0",
+    "sqlalchemy>=2.0.0",
+    "pyyaml>=6.0.0",
+    "httpx>=0.25.0",
+    "click>=8.0.0",
+    "rich>=13.0.0",
+    "jinja2>=3.1.0",
+    "asyncio>=3.4.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.5.0",
+    "pre-commit>=3.0.0",
+    "ruff>=0.1.0",
+]
+web = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+]
+viz = [
+    "matplotlib>=3.7.0",
+    "plotly>=5.15.0",
+]
+
+[project.scripts]
+deep-thinking = "mcps.deep_thinking.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcps"]
+
+[tool.black]
+line-length = 88
+target-version = ['py312']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+src_paths = ["src", "tests"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_paths = ["src"]
+
+[tool.ruff]
+src = ["src", "tests"]
+line-length = 88
+target-version = "py312"
