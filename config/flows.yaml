@@ -1,0 +1,185 @@
+# Deep Thinking Engine - Flow Configurations
+
+comprehensive_analysis:
+  description: "Complete deep thinking analysis with all agents"
+  version: "1.0"
+  estimated_duration: 15
+  
+  steps:
+    - agent: decomposer
+      name: "Problem Decomposition"
+      description: "Break down complex problem into manageable sub-questions"
+      config:
+        complexity_level: adaptive
+        max_sub_questions: 5
+        focus_constraints: []
+      
+    - agent: evidence_seeker
+      name: "Evidence Collection"
+      description: "Gather evidence for each sub-question"
+      parallel: true
+      for_each: "decomposer.sub_questions"
+      config:
+        source_diversity: true
+        min_sources: 5
+        credibility_threshold: 0.6
+      
+    - agent: debate_orchestrator
+      name: "Multi-perspective Debate"
+      description: "Organize debate between different viewpoints"
+      config:
+        positions: ["pro", "con", "neutral"]
+        max_rounds: 3
+        sparse_communication: true
+      
+    - agent: critic
+      name: "Critical Evaluation"
+      description: "Evaluate reasoning quality using Paul-Elder standards"
+      repeat_until: "overall_score >= 0.8"
+      config:
+        standards: paul_elder_full
+        fallacy_detection: true
+      
+    - agent: bias_buster
+      name: "Bias Detection"
+      description: "Detect and flag cognitive biases"
+      config:
+        comprehensive_check: true
+        bias_types: all
+      
+    - agent: innovator
+      name: "Innovation Generation"
+      description: "Generate innovative solutions and ideas"
+      conditions:
+        critic.overall_score: ">=0.8"
+      config:
+        methods: ["SCAMPER", "TRIZ"]
+        novelty_threshold: 0.7
+      
+    - agent: reflector
+      name: "Metacognitive Reflection"
+      description: "Guide Socratic reflection on the thinking process"
+      config:
+        reflection_depth: deep
+        socratic_questions: true
+
+  error_handling:
+    retry_strategy: exponential_backoff
+    fallback_agents: 
+      - simplified_critic
+      - basic_reflector
+    max_retries: 3
+    
+  global_config:
+    enable_caching: true
+    parallel_execution: true
+    quality_gates: true
+
+quick_analysis:
+  description: "Faster analysis for simpler questions"
+  version: "1.0"
+  estimated_duration: 5
+  
+  steps:
+    - agent: decomposer
+      name: "Simple Decomposition"
+      config:
+        complexity_level: simple
+        max_sub_questions: 3
+        
+    - agent: evidence_seeker
+      name: "Basic Evidence"
+      for_each: "decomposer.sub_questions"
+      config:
+        min_sources: 3
+        
+    - agent: critic
+      name: "Basic Evaluation"
+      config:
+        standards: paul_elder_basic
+        
+    - agent: reflector
+      name: "Quick Reflection"
+      config:
+        reflection_depth: shallow
+
+research_focused:
+  description: "Research-heavy analysis with extensive evidence gathering"
+  version: "1.0"
+  estimated_duration: 25
+  
+  steps:
+    - agent: decomposer
+      name: "Detailed Decomposition"
+      config:
+        complexity_level: complex
+        max_sub_questions: 7
+        
+    - agent: evidence_seeker
+      name: "Comprehensive Evidence"
+      parallel: true
+      for_each: "decomposer.sub_questions"
+      config:
+        source_diversity: true
+        min_sources: 10
+        academic_preference: true
+        
+    - agent: evidence_seeker
+      name: "Cross-reference Check"
+      config:
+        verify_sources: true
+        conflict_detection: true
+        
+    - agent: debate_orchestrator
+      name: "Academic Debate"
+      config:
+        positions: ["hypothesis", "null_hypothesis", "alternative"]
+        max_rounds: 5
+        
+    - agent: critic
+      name: "Rigorous Evaluation"
+      repeat_until: "overall_score >= 0.9"
+      config:
+        standards: paul_elder_full
+        academic_rigor: true
+        
+    - agent: reflector
+      name: "Research Reflection"
+      config:
+        reflection_depth: deep
+        methodology_review: true
+
+creative_thinking:
+  description: "Innovation-focused thinking flow"
+  version: "1.0"
+  estimated_duration: 12
+  
+  steps:
+    - agent: decomposer
+      name: "Creative Decomposition"
+      config:
+        creativity_mode: true
+        unconventional_angles: true
+        
+    - agent: innovator
+      name: "Idea Generation"
+      config:
+        methods: ["SCAMPER", "TRIZ", "lateral_thinking"]
+        quantity_over_quality: true
+        
+    - agent: innovator
+      name: "Cross-domain Inspiration"
+      config:
+        cross_domain_search: true
+        analogy_generation: true
+        
+    - agent: critic
+      name: "Innovation Evaluation"
+      config:
+        novelty_assessment: true
+        feasibility_check: true
+        
+    - agent: reflector
+      name: "Creative Reflection"
+      config:
+        innovation_insights: true

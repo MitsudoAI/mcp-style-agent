@@ -15,7 +15,7 @@
     - 配置核心依赖：pydantic、sqlalchemy、pyyaml、asyncio、httpx等
     - _Requirements: 13.1, 13.2_
 
-  - [ ] 1.3 定义核心接口和数据模型
+  - [x] 1.3 定义核心接口和数据模型
     - 使用Pydantic定义标准化的Agent接口和数据传输对象(DTO)
     - 创建BaseAgent抽象类和通用接口规范
     - 实现配置管理系统，支持YAML流程定义和热重载
