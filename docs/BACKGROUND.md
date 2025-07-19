@@ -9,7 +9,7 @@ Build powerful agent with multiple local MCPs
 - MCP-Style Deep Thinking
 - Long-tail research on any topic
 
-各个组件都用单独的MCP，遵循Unix 哲学：每个组件只做一件事，每个组件的输入输出都是文本。
+各个组件都用单独的MCP，遵循Unix 哲学：每个组件只做一件事，但把这件事做得足够好。
 超强的控制力：
     - 每个组件的输入输出都是文本，所以可以很方便地热插拔不同的组件
     - 把LLM内部黑匣子暴露出来， 方便调试
