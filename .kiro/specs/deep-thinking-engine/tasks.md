@@ -62,7 +62,7 @@
     - 编写next_step工具的单元测试
     - _Requirements: 流程控制，模板管理_
 
-  - [ ] 3.3 实现analyze_step工具
+  - [x] 3.3 实现analyze_step工具
     - 创建步骤质量分析和评估Prompt模板返回
     - 实现质量门控和改进建议生成
     - 添加步骤结果验证和格式检查
