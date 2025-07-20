@@ -3,16 +3,14 @@ Session Manager for Deep Thinking Engine
 Provides high-level interface for session management with local storage
 """
 
-import uuid
-import time
-from typing import Any, Dict, List, Optional, Tuple
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-import logging
+from typing import Any, Dict, List, Optional
 
-from ..data.database import ThinkingDatabase
-from ..models.mcp_models import SessionState, MCPToolOutput
 from ..config.exceptions import SessionNotFoundError, SessionStateError
+from ..data.database import ThinkingDatabase
+from ..models.mcp_models import SessionState
 
 logger = logging.getLogger(__name__)
 
@@ -22,25 +20,27 @@ class SessionManager:
     High-level session management for thinking processes
     Handles session lifecycle, state tracking, and persistence
     """
-    
-    def __init__(self, db_path: Optional[str] = None, encryption_key: Optional[bytes] = None):
+
+    def __init__(
+        self, db_path: Optional[str] = None, encryption_key: Optional[bytes] = None
+    ):
         # Use default path in user's data directory
         if db_path is None:
             data_dir = Path.home() / ".deep_thinking"
             data_dir.mkdir(exist_ok=True)
             db_path = str(data_dir / "sessions.db")
-        
+
         self.db = ThinkingDatabase(db_path, encryption_key)
         self._active_sessions = {}  # In-memory cache for active sessions
         logger.info(f"SessionManager initialized with database: {db_path}")
-    
+
     def create_session(self, session_state: SessionState) -> str:
         """
         Create a new thinking session from SessionState
-        
+
         Args:
             session_state: SessionState object with session details
-            
+
         Returns:
             Session ID
         """
@@ -49,144 +49,172 @@ class SessionManager:
             "complexity": session_state.context.get("complexity", "moderate"),
             "flow_type": session_state.flow_type,
             "settings": {
-                "quality_threshold": 0.8 if session_state.context.get("complexity") == "complex" else 0.7,
-                "max_steps": 20 if session_state.context.get("complexity") == "complex" else 15,
+                "quality_threshold": (
+                    0.8 if session_state.context.get("complexity") == "complex" else 0.7
+                ),
+                "max_steps": (
+                    20 if session_state.context.get("complexity") == "complex" else 15
+                ),
                 "enable_bias_detection": True,
-                "enable_innovation_thinking": session_state.context.get("complexity") in ["moderate", "complex"]
-            }
+                "enable_innovation_thinking": session_state.context.get("complexity")
+                in ["moderate", "complex"],
+            },
         }
-        
+
         # Store in database
         success = self.db.create_session(
             session_id=session_state.session_id,
             topic=session_state.topic,
             session_type=session_state.flow_type,
             user_id=None,  # Can be added later if needed
-            configuration=configuration
+            configuration=configuration,
         )
-        
+
         if not success:
-            raise SessionStateError(f"Failed to create session for topic: {session_state}")
-        
+            raise SessionStateError(
+                f"Failed to create session for topic: {session_state}"
+            )
+
         # Store in memory cache
         self._active_sessions[session_state.session_id] = session_state
-        
-        logger.info(f"Created session {session_state.session_id} for topic: {session_state.topic[:50]}...")
+
+        logger.info(
+            f"Created session {session_state.session_id} for topic: {session_state.topic[:50]}..."
+        )
         return session_state.session_id
-    
+
     def get_session(self, session_id: str) -> SessionState:
         """
         Get session state
-        
+
         Args:
             session_id: Session identifier
-            
+
         Returns:
             SessionState object
-            
+
         Raises:
             SessionNotFoundError: If session doesn't exist
         """
         # Check in-memory cache first
         if session_id in self._active_sessions:
             return self._active_sessions[session_id]
-        
+
         # Load from database
         session_data = self.db.get_session(session_id)
         if not session_data:
             raise SessionNotFoundError(f"Session {session_id} not found")
-        
+
         # Convert to SessionState object
         session_state = SessionState(
-            session_id=session_data['id'],
-            topic=session_data['topic'],
-            current_step=session_data.get('current_step', 'initialize'),
-            step_number=session_data.get('step_number', 0),
-            flow_type=session_data.get('flow_type', session_data.get('session_type', 'comprehensive_analysis')),
-            status=session_data.get('status', 'active'),
-            step_results=session_data.get('context', {}).get('step_results', {}),
-            context=session_data.get('context', {}),
-            quality_scores=session_data.get('quality_metrics', {}),
-            created_at=datetime.fromisoformat(session_data['created_at']) if session_data.get('created_at') else datetime.now(),
-            updated_at=datetime.fromisoformat(session_data['updated_at']) if session_data.get('updated_at') else datetime.now()
+            session_id=session_data["id"],
+            topic=session_data["topic"],
+            current_step=session_data.get("current_step", "initialize"),
+            step_number=session_data.get("step_number", 0),
+            flow_type=session_data.get(
+                "flow_type", session_data.get("session_type", "comprehensive_analysis")
+            ),
+            status=session_data.get("status", "active"),
+            step_results=session_data.get("context", {}).get("step_results", {}),
+            context=session_data.get("context", {}),
+            quality_scores=session_data.get("quality_metrics", {}),
+            created_at=(
+                datetime.fromisoformat(session_data["created_at"])
+                if session_data.get("created_at")
+                else datetime.now()
+            ),
+            updated_at=(
+                datetime.fromisoformat(session_data["updated_at"])
+                if session_data.get("updated_at")
+                else datetime.now()
+            ),
         )
-        
+
         # Cache if active
         if session_state.status == "active":
             self._active_sessions[session_id] = session_state
-        
+
         return session_state
-    
-    def update_session_step(self, session_id: str, step_name: str, 
-                           step_result: Optional[str] = None,
-                           quality_score: Optional[float] = None,
-                           execution_time_ms: Optional[int] = None) -> bool:
+
+    def update_session_step(
+        self,
+        session_id: str,
+        step_name: str,
+        step_result: Optional[str] = None,
+        quality_score: Optional[float] = None,
+        execution_time_ms: Optional[int] = None,
+    ) -> bool:
         """
         Update session with new step information
-        
+
         Args:
             session_id: Session identifier
             step_name: Name of the current step
             step_result: Result from the step (optional)
             quality_score: Quality score for the step (optional)
             execution_time_ms: Execution time in milliseconds (optional)
-            
+
         Returns:
             True if successful
         """
         try:
             session = self.get_session(session_id)
-            
+
             # Update session state
             session.current_step = step_name
             session.step_number += 1
             session.updated_at = datetime.now()
-            
+
             if step_result:
                 session.step_results[step_name] = step_result
-            
+
             if quality_score is not None:
                 session.quality_scores[step_name] = quality_score
-            
+
             # Add step to database
-            step_id = self.db.add_session_step(
+            self.db.add_session_step(
                 session_id=session_id,
                 step_name=step_name,
                 step_number=session.step_number,
                 step_type=self._determine_step_type(step_name),
                 input_data={"step_result": step_result} if step_result else None,
                 quality_score=quality_score,
-                execution_time_ms=execution_time_ms
+                execution_time_ms=execution_time_ms,
             )
-            
+
             # Update session in database
             self.db.update_session(
                 session_id,
                 current_step=step_name,
                 step_number=session.step_number,
                 context=session.context,
-                quality_metrics=session.quality_scores
+                quality_metrics=session.quality_scores,
             )
-            
+
             # Update cache
             self._active_sessions[session_id] = session
-            
+
             logger.info(f"Updated session {session_id} to step {step_name}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error updating session {session_id}: {e}")
             return False
-    
-    def add_step_result(self, session_id: str, step_name: str, 
-                       result_content: str, result_type: str = "output",
-                       metadata: Optional[Dict[str, Any]] = None,
-                       quality_indicators: Optional[Dict[str, Any]] = None,
-                       citations: Optional[List[Dict[str, Any]]] = None,
-                       quality_score: Optional[float] = None) -> bool:
+
+    def add_step_result(
+        self,
+        session_id: str,
+        step_name: str,
+        result_content: str,
+        result_type: str = "output",
+        metadata: Optional[Dict[str, Any]] = None,
+        quality_indicators: Optional[Dict[str, Any]] = None,
+        citations: Optional[List[Dict[str, Any]]] = None,
+        quality_score: Optional[float] = None,
+    ) -> bool:
         """
         Add detailed result to a step
-        
+
         Args:
             session_id: Session identifier
             step_name: Name of the step
@@ -195,7 +223,7 @@ class SessionManager:
             metadata: Additional metadata
             quality_indicators: Quality assessment data
             citations: Citation information
-            
+
         Returns:
             True if successful
         """
@@ -204,10 +232,10 @@ class SessionManager:
             steps = self.db.get_session_steps(session_id)
             step_id = None
             for step in steps:
-                if step['step_name'] == step_name:
-                    step_id = step['id']
+                if step["step_name"] == step_name:
+                    step_id = step["id"]
                     break
-            
+
             if step_id is None:
                 # Create the step if it doesn't exist
                 session = self.get_session(session_id)
@@ -216,25 +244,27 @@ class SessionManager:
                     step_name=step_name,
                     step_number=session.step_number + 1,
                     step_type=self._determine_step_type(step_name),
-                    quality_score=quality_score
+                    quality_score=quality_score,
                 )
                 if step_id is None:
-                    logger.warning(f"Failed to create step {step_name} for session {session_id}")
+                    logger.warning(
+                        f"Failed to create step {step_name} for session {session_id}"
+                    )
                     return False
-            
+
             # Update session state with result
             session = self.get_session(session_id)
             session.step_results[step_name] = {
                 "result": result_content,
                 "quality_score": quality_score,
-                "timestamp": datetime.now()
+                "timestamp": datetime.now(),
             }
             if quality_score is not None:
                 session.quality_scores[step_name] = quality_score
-            
+
             # Update cache
             self._active_sessions[session_id] = session
-            
+
             # Add result to database
             result_id = self.db.add_step_result(
                 session_id=session_id,
@@ -243,23 +273,25 @@ class SessionManager:
                 content=result_content,
                 metadata=metadata,
                 quality_indicators=quality_indicators,
-                citations=citations
+                citations=citations,
             )
-            
+
             return result_id is not None
-            
+
         except Exception as e:
             logger.error(f"Error adding result to session {session_id}: {e}")
             return False
-    
-    def complete_session(self, session_id: str, final_results: Optional[Dict[str, Any]] = None) -> bool:
+
+    def complete_session(
+        self, session_id: str, final_results: Optional[Dict[str, Any]] = None
+    ) -> bool:
         """
         Mark session as completed
-        
+
         Args:
             session_id: Session identifier
             final_results: Final results and summary
-            
+
         Returns:
             True if successful
         """
@@ -267,38 +299,38 @@ class SessionManager:
             session = self.get_session(session_id)
             session.status = "completed"
             session.updated_at = datetime.now()
-            
+
             # Update database
             updates = {
                 "status": "completed",
-                "completed_at": datetime.now().isoformat()
+                "completed_at": datetime.now().isoformat(),
             }
-            
+
             if final_results:
                 updates["quality_metrics"] = {
                     **session.quality_scores,
-                    "final_results": final_results
+                    "final_results": final_results,
                 }
-            
+
             success = self.db.update_session(session_id, **updates)
-            
+
             # Remove from active cache
             self._active_sessions.pop(session_id, None)
-            
+
             logger.info(f"Completed session {session_id}")
             return success
-            
+
         except Exception as e:
             logger.error(f"Error completing session {session_id}: {e}")
             return False
-    
+
     def get_session_history(self, session_id: str) -> Dict[str, Any]:
         """
         Get complete session history including all steps and results
-        
+
         Args:
             session_id: Session identifier
-            
+
         Returns:
             Complete session history
         """
@@ -306,93 +338,105 @@ class SessionManager:
             session = self.get_session(session_id)
             steps = self.db.get_session_steps(session_id)
             results = self.db.get_step_results(session_id)
-            
+
             # Organize results by step
             step_results = {}
             for result in results:
-                step_id = result['step_id']
+                step_id = result["step_id"]
                 if step_id not in step_results:
                     step_results[step_id] = []
                 step_results[step_id].append(result)
-            
+
             # Combine steps with their results
             detailed_steps = []
             for step in steps:
                 step_data = dict(step)
-                step_data['results'] = step_results.get(step['id'], [])
+                step_data["results"] = step_results.get(step["id"], [])
                 detailed_steps.append(step_data)
-            
+
             return {
                 "session": session.dict(),
                 "steps": detailed_steps,
                 "summary": {
                     "total_steps": len(steps),
                     "total_results": len(results),
-                    "average_quality": sum(session.quality_scores.values()) / len(session.quality_scores) if session.quality_scores else 0,
-                    "duration": (session.updated_at - session.created_at).total_seconds() if session.updated_at else 0
-                }
+                    "average_quality": (
+                        sum(session.quality_scores.values())
+                        / len(session.quality_scores)
+                        if session.quality_scores
+                        else 0
+                    ),
+                    "duration": (
+                        (session.updated_at - session.created_at).total_seconds()
+                        if session.updated_at
+                        else 0
+                    ),
+                },
             }
-            
+
         except Exception as e:
             logger.error(f"Error getting session history {session_id}: {e}")
             return {}
-    
-    def list_user_sessions(self, user_id: Optional[str] = None, 
-                          status: Optional[str] = None,
-                          limit: int = 50) -> List[Dict[str, Any]]:
+
+    def list_user_sessions(
+        self,
+        user_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
         """
         List sessions for a user
-        
+
         Args:
             user_id: User identifier (optional)
             status: Filter by status (optional)
             limit: Maximum number of sessions to return
-            
+
         Returns:
             List of session summaries
         """
         return self.db.list_sessions(user_id=user_id, status=status, limit=limit)
-    
+
     def delete_session(self, session_id: str) -> bool:
         """
         Delete a session and all its data
-        
+
         Args:
             session_id: Session identifier
-            
+
         Returns:
             True if successful
         """
         try:
             # Remove from cache
             self._active_sessions.pop(session_id, None)
-            
+
             # Delete from database
             success = self.db.delete_session(session_id)
-            
+
             if success:
                 logger.info(f"Deleted session {session_id}")
-            
+
             return success
-            
+
         except Exception as e:
             logger.error(f"Error deleting session {session_id}: {e}")
             return False
-    
+
     def get_session_context(self, session_id: str) -> Dict[str, Any]:
         """
         Get session context for use in prompts
-        
+
         Args:
             session_id: Session identifier
-            
+
         Returns:
             Context dictionary for prompt templates
         """
         try:
             session = self.get_session(session_id)
             steps = self.db.get_session_steps(session_id)
-            
+
             # Build context summary
             context = {
                 "session_id": session_id,
@@ -400,144 +444,148 @@ class SessionManager:
                 "current_step": session.current_step,
                 "step_number": session.step_number,
                 "flow_type": session.flow_type,
-                "completed_steps": [step['step_name'] for step in steps],
+                "completed_steps": [step["step_name"] for step in steps],
                 "step_results": session.step_results,
                 "quality_scores": session.quality_scores,
                 "progress": f"{len(steps)}/{self._get_expected_steps(session.flow_type)}",
-                "session_duration": (datetime.now() - session.created_at).total_seconds() / 60  # minutes
+                "session_duration": (
+                    datetime.now() - session.created_at
+                ).total_seconds()
+                / 60,  # minutes
             }
-            
+
             # Add recent step results for context
             if steps:
                 recent_steps = steps[-3:]  # Last 3 steps
                 context["recent_steps"] = [
                     {
-                        "name": step['step_name'],
-                        "result": session.step_results.get(step['step_name'], ""),
-                        "quality": session.quality_scores.get(step['step_name'])
+                        "name": step["step_name"],
+                        "result": session.step_results.get(step["step_name"], ""),
+                        "quality": session.quality_scores.get(step["step_name"]),
                     }
                     for step in recent_steps
                 ]
-            
+
             return context
-            
+
         except Exception as e:
             logger.error(f"Error getting session context {session_id}: {e}")
             return {}
-    
+
     def cleanup_inactive_sessions(self, hours_inactive: int = 24) -> int:
         """
         Clean up sessions that have been inactive for too long
-        
+
         Args:
             hours_inactive: Hours of inactivity before cleanup
-            
+
         Returns:
             Number of sessions cleaned up
         """
         try:
             cutoff_time = datetime.now() - timedelta(hours=hours_inactive)
-            
+
             # Get inactive sessions
             all_sessions = self.db.list_sessions(status="active", limit=1000)
             inactive_sessions = [
-                s for s in all_sessions 
-                if datetime.fromisoformat(s['updated_at']) < cutoff_time
+                s
+                for s in all_sessions
+                if datetime.fromisoformat(s["updated_at"]) < cutoff_time
             ]
-            
+
             cleaned_count = 0
             for session in inactive_sessions:
                 # Mark as abandoned rather than delete
-                self.db.update_session(session['id'], status="abandoned")
-                self._active_sessions.pop(session['id'], None)
+                self.db.update_session(session["id"], status="abandoned")
+                self._active_sessions.pop(session["id"], None)
                 cleaned_count += 1
-            
+
             if cleaned_count > 0:
                 logger.info(f"Cleaned up {cleaned_count} inactive sessions")
-            
+
             return cleaned_count
-            
+
         except Exception as e:
             logger.error(f"Error cleaning up inactive sessions: {e}")
             return 0
-    
+
     def get_statistics(self) -> Dict[str, Any]:
         """Get session management statistics"""
         try:
             db_stats = self.db.get_database_stats()
-            
+
             stats = {
                 **db_stats,
                 "active_sessions_in_memory": len(self._active_sessions),
                 "database_path": str(self.db.db_path),
-                "encryption_enabled": self.db.encryption is not None
+                "encryption_enabled": self.db.encryption is not None,
             }
-            
+
             return stats
-            
+
         except Exception as e:
             logger.error(f"Error getting statistics: {e}")
             return {}
-    
+
     def _determine_step_type(self, step_name: str) -> str:
         """Determine step type from step name"""
         step_type_mapping = {
             "decompose": "analysis",
-            "evidence": "research", 
+            "evidence": "research",
             "debate": "reasoning",
             "evaluate": "assessment",
             "bias": "validation",
             "innovation": "creativity",
-            "reflect": "metacognition"
+            "reflect": "metacognition",
         }
-        
+
         for key, step_type in step_type_mapping.items():
             if key in step_name.lower():
                 return step_type
-        
+
         return "general"
-    
+
     def _get_expected_steps(self, flow_type: str) -> int:
         """Get expected number of steps for a flow type"""
         flow_steps = {
             "comprehensive_analysis": 12,
             "quick_analysis": 6,
             "creative_thinking": 8,
-            "critical_evaluation": 10
+            "critical_evaluation": 10,
         }
         return flow_steps.get(flow_type, 10)
-    
+
     def get_step_summary(self, session_id: str) -> str:
         """Get a summary of completed steps"""
         try:
             session = self.get_session(session_id)
             if not session:
                 return "会话未找到"
-                
+
             steps = self.db.get_session_steps(session_id)
-            
+
             summary_parts = []
             for step in steps:
-                step_name = step.get('step_name', 'unknown_step')
-                quality = session.quality_scores.get(step_name, 'N/A')
+                step_name = step.get("step_name", "unknown_step")
+                quality = session.quality_scores.get(step_name, "N/A")
                 summary_parts.append(f"- {step_name}: 完成 (质量: {quality})")
-            
+
             return "\n".join(summary_parts) if summary_parts else "暂无完成的步骤"
-            
+
         except Exception as e:
             logger.error(f"Error getting step summary for {session_id}: {e}")
             return "获取步骤摘要时出错"
-    
+
     def get_full_trace(self, session_id: str) -> Dict[str, Any]:
         """Get full thinking trace for the session"""
         try:
             session = self.get_session(session_id)
             if not session:
                 return {"error": "Session not found"}
-                
+
             steps = self.db.get_session_steps(session_id)
             results = self.db.get_step_results(session_id)
-            
+
             trace = {
                 "session_id": session_id,
                 "topic": session.topic,
@@ -545,32 +593,36 @@ class SessionManager:
                 "status": session.status,
                 "steps": [],
                 "quality_summary": session.quality_scores,
-                "total_duration": (session.updated_at - session.created_at).total_seconds() if session.updated_at and session.created_at else 0
+                "total_duration": (
+                    (session.updated_at - session.created_at).total_seconds()
+                    if session.updated_at and session.created_at
+                    else 0
+                ),
             }
-            
+
             # Organize results by step
             step_results = {}
             for result in results:
-                step_id = result.get('step_id')
+                step_id = result.get("step_id")
                 if step_id and step_id not in step_results:
                     step_results[step_id] = []
                 if step_id:
                     step_results[step_id].append(result)
-            
+
             # Build detailed step trace
             for step in steps:
                 step_trace = {
-                    "step_name": step.get('step_name', 'unknown'),
-                    "step_type": step.get('step_type', 'general'),
-                    "quality_score": step.get('quality_score'),
-                    "execution_time_ms": step.get('execution_time_ms'),
-                    "results": step_results.get(step.get('id'), []),
-                    "timestamp": step.get('created_at')
+                    "step_name": step.get("step_name", "unknown"),
+                    "step_type": step.get("step_type", "general"),
+                    "quality_score": step.get("quality_score"),
+                    "execution_time_ms": step.get("execution_time_ms"),
+                    "results": step_results.get(step.get("id"), []),
+                    "timestamp": step.get("created_at"),
                 }
                 trace["steps"].append(step_trace)
-            
+
             return trace
-            
+
         except Exception as e:
             logger.error(f"Error getting full trace for {session_id}: {e}")
             return {"error": str(e)}

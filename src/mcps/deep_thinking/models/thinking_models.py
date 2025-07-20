@@ -2,14 +2,16 @@
 Thinking process related Pydantic models
 """
 
-from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class ComplexityLevel(str, Enum):
     """Question complexity levels"""
+
     SIMPLE = "simple"
     MODERATE = "moderate"
     COMPLEX = "complex"
@@ -17,6 +19,7 @@ class ComplexityLevel(str, Enum):
 
 class QuestionRelationship(str, Enum):
     """Types of relationships between questions"""
+
     PREREQUISITE = "prerequisite"
     PARALLEL = "parallel"
     DEPENDENT = "dependent"
@@ -25,6 +28,7 @@ class QuestionRelationship(str, Enum):
 
 class Priority(str, Enum):
     """Priority levels"""
+
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
@@ -32,6 +36,7 @@ class Priority(str, Enum):
 
 class SessionStatus(str, Enum):
     """Thinking session status"""
+
     ACTIVE = "active"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -41,100 +46,174 @@ class SessionStatus(str, Enum):
 
 class SubQuestion(BaseModel):
     """Individual sub-question from decomposition"""
-    
+
     id: str = Field(..., description="Unique identifier for the sub-question")
     question: str = Field(..., description="The sub-question text")
     priority: Priority = Field(..., description="Priority level of this sub-question")
     search_keywords: List[str] = Field(..., description="Keywords for evidence search")
-    expected_perspectives: List[str] = Field(default_factory=list, description="Expected viewpoints to explore")
-    potential_controversies: List[str] = Field(default_factory=list, description="Potential controversial aspects")
-    domain_context: Optional[str] = Field(default=None, description="Domain or context for this question")
-    estimated_complexity: ComplexityLevel = Field(default=ComplexityLevel.MODERATE, description="Estimated complexity")
+    expected_perspectives: List[str] = Field(
+        default_factory=list, description="Expected viewpoints to explore"
+    )
+    potential_controversies: List[str] = Field(
+        default_factory=list, description="Potential controversial aspects"
+    )
+    domain_context: Optional[str] = Field(
+        default=None, description="Domain or context for this question"
+    )
+    estimated_complexity: ComplexityLevel = Field(
+        default=ComplexityLevel.MODERATE, description="Estimated complexity"
+    )
 
 
 class QuestionRelationshipLink(BaseModel):
     """Relationship between questions"""
-    
+
     from_question_id: str = Field(..., description="Source question ID")
     to_question_id: str = Field(..., description="Target question ID")
     relationship: QuestionRelationship = Field(..., description="Type of relationship")
     strength: float = Field(default=1.0, description="Strength of relationship (0-1)")
-    description: Optional[str] = Field(default=None, description="Description of the relationship")
+    description: Optional[str] = Field(
+        default=None, description="Description of the relationship"
+    )
 
 
 class QuestionDecomposition(BaseModel):
     """Result of question decomposition process"""
-    
+
     main_question: str = Field(..., description="Original main question")
-    complexity_assessment: ComplexityLevel = Field(..., description="Assessed complexity level")
+    complexity_assessment: ComplexityLevel = Field(
+        ..., description="Assessed complexity level"
+    )
     sub_questions: List[SubQuestion] = Field(..., description="List of sub-questions")
-    question_relationships: List[QuestionRelationshipLink] = Field(default_factory=list, description="Relationships between questions")
-    decomposition_strategy: str = Field(..., description="Strategy used for decomposition")
-    total_estimated_time: Optional[int] = Field(default=None, description="Estimated total processing time in minutes")
-    recommended_approach: Optional[str] = Field(default=None, description="Recommended approach for tackling the questions")
+    question_relationships: List[QuestionRelationshipLink] = Field(
+        default_factory=list, description="Relationships between questions"
+    )
+    decomposition_strategy: str = Field(
+        ..., description="Strategy used for decomposition"
+    )
+    total_estimated_time: Optional[int] = Field(
+        default=None, description="Estimated total processing time in minutes"
+    )
+    recommended_approach: Optional[str] = Field(
+        default=None, description="Recommended approach for tackling the questions"
+    )
 
 
 class ThinkingTrace(BaseModel):
     """Individual step in the thinking process"""
-    
+
     id: str = Field(..., description="Unique trace identifier")
     session_id: str = Field(..., description="Session this trace belongs to")
     step_number: int = Field(..., description="Sequential step number")
     agent_type: str = Field(..., description="Type of agent that generated this trace")
     role: str = Field(..., description="Role or perspective taken")
     thought_content: str = Field(..., description="The actual thought or reasoning")
-    evidence_references: List[str] = Field(default_factory=list, description="References to evidence sources")
-    evaluation_scores: Optional[Dict[str, float]] = Field(default=None, description="Quality evaluation scores")
-    bias_flags: Optional[List[str]] = Field(default=None, description="Detected cognitive biases")
-    confidence_level: Optional[float] = Field(default=None, description="Confidence in this reasoning step")
-    timestamp: datetime = Field(default_factory=datetime.now, description="When this trace was created")
-    parent_trace_id: Optional[str] = Field(default=None, description="Parent trace if this is a sub-thought")
+    evidence_references: List[str] = Field(
+        default_factory=list, description="References to evidence sources"
+    )
+    evaluation_scores: Optional[Dict[str, float]] = Field(
+        default=None, description="Quality evaluation scores"
+    )
+    bias_flags: Optional[List[str]] = Field(
+        default=None, description="Detected cognitive biases"
+    )
+    confidence_level: Optional[float] = Field(
+        default=None, description="Confidence in this reasoning step"
+    )
+    timestamp: datetime = Field(
+        default_factory=datetime.now, description="When this trace was created"
+    )
+    parent_trace_id: Optional[str] = Field(
+        default=None, description="Parent trace if this is a sub-thought"
+    )
 
 
 class ThinkingSession(BaseModel):
     """Complete thinking session"""
-    
+
     id: str = Field(..., description="Unique session identifier")
-    user_id: Optional[str] = Field(default=None, description="User who initiated the session")
+    user_id: Optional[str] = Field(
+        default=None, description="User who initiated the session"
+    )
     topic: str = Field(..., description="Main topic or question being explored")
-    session_type: str = Field(default="comprehensive_analysis", description="Type of thinking session")
-    status: SessionStatus = Field(default=SessionStatus.ACTIVE, description="Current session status")
-    start_time: datetime = Field(default_factory=datetime.now, description="Session start time")
+    session_type: str = Field(
+        default="comprehensive_analysis", description="Type of thinking session"
+    )
+    status: SessionStatus = Field(
+        default=SessionStatus.ACTIVE, description="Current session status"
+    )
+    start_time: datetime = Field(
+        default_factory=datetime.now, description="Session start time"
+    )
     end_time: Optional[datetime] = Field(default=None, description="Session end time")
-    configuration: Dict[str, Any] = Field(default_factory=dict, description="Session configuration")
-    decomposition: Optional[QuestionDecomposition] = Field(default=None, description="Question decomposition results")
-    thinking_traces: List[ThinkingTrace] = Field(default_factory=list, description="All thinking traces in this session")
-    final_results: Optional[Dict[str, Any]] = Field(default=None, description="Final analysis results")
-    quality_metrics: Optional[Dict[str, float]] = Field(default=None, description="Overall quality metrics")
-    total_execution_time: Optional[float] = Field(default=None, description="Total execution time in seconds")
-    agent_interactions_count: int = Field(default=0, description="Total number of agent interactions")
+    configuration: Dict[str, Any] = Field(
+        default_factory=dict, description="Session configuration"
+    )
+    decomposition: Optional[QuestionDecomposition] = Field(
+        default=None, description="Question decomposition results"
+    )
+    thinking_traces: List[ThinkingTrace] = Field(
+        default_factory=list, description="All thinking traces in this session"
+    )
+    final_results: Optional[Dict[str, Any]] = Field(
+        default=None, description="Final analysis results"
+    )
+    quality_metrics: Optional[Dict[str, float]] = Field(
+        default=None, description="Overall quality metrics"
+    )
+    total_execution_time: Optional[float] = Field(
+        default=None, description="Total execution time in seconds"
+    )
+    agent_interactions_count: int = Field(
+        default=0, description="Total number of agent interactions"
+    )
 
 
 class FlowStep(BaseModel):
     """Individual step in a thinking flow"""
-    
+
     step_id: str = Field(..., description="Unique step identifier")
     agent_type: str = Field(..., description="Agent type to execute")
     step_name: str = Field(..., description="Human-readable step name")
     description: Optional[str] = Field(default=None, description="Step description")
-    config: Dict[str, Any] = Field(default_factory=dict, description="Step-specific configuration")
-    conditions: Optional[Dict[str, Any]] = Field(default=None, description="Conditions for step execution")
-    parallel: bool = Field(default=False, description="Whether this step can run in parallel")
+    config: Dict[str, Any] = Field(
+        default_factory=dict, description="Step-specific configuration"
+    )
+    conditions: Optional[Dict[str, Any]] = Field(
+        default=None, description="Conditions for step execution"
+    )
+    parallel: bool = Field(
+        default=False, description="Whether this step can run in parallel"
+    )
     for_each: Optional[str] = Field(default=None, description="Field to iterate over")
-    repeat_until: Optional[str] = Field(default=None, description="Condition to repeat until")
+    repeat_until: Optional[str] = Field(
+        default=None, description="Condition to repeat until"
+    )
     timeout_seconds: Optional[int] = Field(default=None, description="Step timeout")
-    retry_config: Optional[Dict[str, Any]] = Field(default=None, description="Retry configuration")
+    retry_config: Optional[Dict[str, Any]] = Field(
+        default=None, description="Retry configuration"
+    )
 
 
 class ThinkingFlow(BaseModel):
     """Complete thinking flow definition"""
-    
+
     name: str = Field(..., description="Flow name")
     description: Optional[str] = Field(default=None, description="Flow description")
     version: str = Field(default="1.0", description="Flow version")
     steps: List[FlowStep] = Field(..., description="Ordered list of flow steps")
-    error_handling: Optional[Dict[str, Any]] = Field(default=None, description="Error handling configuration")
-    global_config: Dict[str, Any] = Field(default_factory=dict, description="Global flow configuration")
-    prerequisites: List[str] = Field(default_factory=list, description="Prerequisites for this flow")
-    expected_outputs: List[str] = Field(default_factory=list, description="Expected output types")
-    estimated_duration: Optional[int] = Field(default=None, description="Estimated duration in minutes")
+    error_handling: Optional[Dict[str, Any]] = Field(
+        default=None, description="Error handling configuration"
+    )
+    global_config: Dict[str, Any] = Field(
+        default_factory=dict, description="Global flow configuration"
+    )
+    prerequisites: List[str] = Field(
+        default_factory=list, description="Prerequisites for this flow"
+    )
+    expected_outputs: List[str] = Field(
+        default_factory=list, description="Expected output types"
+    )
+    estimated_duration: Optional[int] = Field(
+        default=None, description="Estimated duration in minutes"
+    )

@@ -23,10 +23,14 @@ def main():
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 def think(question: str, config: str = None, output: str = None, verbose: bool = False):
     """Start a deep thinking session on the given question."""
-    console.print(Panel(f"🧠 Starting deep thinking session on: {question}", 
-                       title="Deep Thinking Engine", 
-                       border_style="blue"))
-    
+    console.print(
+        Panel(
+            f"🧠 Starting deep thinking session on: {question}",
+            title="Deep Thinking Engine",
+            border_style="blue",
+        )
+    )
+
     # TODO: Implement the actual thinking process
     console.print("🚧 Implementation in progress...")
 

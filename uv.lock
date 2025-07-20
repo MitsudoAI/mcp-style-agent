@@ -555,9 +555,13 @@ web = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "black" },
     { name = "cryptography" },
+    { name = "isort" },
+    { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -586,9 +590,13 @@ provides-extras = ["dev", "web", "viz"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "black", specifier = ">=25.1.0" },
     { name = "cryptography", specifier = ">=45.0.5" },
+    { name = "isort", specifier = ">=6.0.1" },
+    { name = "mypy", specifier = ">=1.17.0" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", specifier = ">=1.1.0" },
+    { name = "ruff", specifier = ">=0.12.4" },
 ]
 
 [[package]]

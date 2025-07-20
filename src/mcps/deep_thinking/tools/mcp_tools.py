@@ -8,41 +8,47 @@ These tools follow the zero-cost principle:
 """
 
 import uuid
-from typing import Dict, Any, Optional, List
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
+from ..config.exceptions import DeepThinkingError
+from ..flows.flow_manager import FlowManager
 from ..models.mcp_models import (
-    MCPToolOutput, MCPToolName,
-    StartThinkingInput, NextStepInput, AnalyzeStepInput, CompleteThinkingInput,
-    SessionState
+    AnalyzeStepInput,
+    CompleteThinkingInput,
+    MCPToolName,
+    MCPToolOutput,
+    NextStepInput,
+    SessionState,
+    StartThinkingInput,
 )
 from ..sessions.session_manager import SessionManager
 from ..templates.template_manager import TemplateManager
-from ..flows.flow_manager import FlowManager
-from ..config.exceptions import DeepThinkingError
 
 
 class MCPTools:
     """
     Core MCP tools that return prompt templates for LLM execution
-    
+
     Following the zero-cost principle:
     - Server handles flow control and template management
     - LLM handles intelligent processing and content generation
     """
-    
-    def __init__(self, 
-                 session_manager: SessionManager,
-                 template_manager: TemplateManager,
-                 flow_manager: FlowManager):
+
+    def __init__(
+        self,
+        session_manager: SessionManager,
+        template_manager: TemplateManager,
+        flow_manager: FlowManager,
+    ):
         self.session_manager = session_manager
         self.template_manager = template_manager
         self.flow_manager = flow_manager
-    
+
     def start_thinking(self, input_data: StartThinkingInput) -> MCPToolOutput:
         """
         Start a new deep thinking session
-        
+
         Returns a problem decomposition prompt template for the LLM to execute
         """
         try:
@@ -56,26 +62,25 @@ class MCPTools:
                 context={
                     "complexity": input_data.complexity,
                     "focus": input_data.focus,
-                    "original_topic": input_data.topic
-                }
+                    "original_topic": input_data.topic,
+                },
             )
-            
+
             # Save session state
             self.session_manager.create_session(session_state)
-            
+
             # Get decomposition prompt template
             template_params = {
                 "topic": input_data.topic,
                 "complexity": input_data.complexity,
                 "focus": input_data.focus,
-                "domain_context": input_data.focus or "general analysis"
+                "domain_context": input_data.focus or "general analysis",
             }
-            
+
             prompt_template = self.template_manager.get_template(
-                "decomposition", 
-                template_params
+                "decomposition", template_params
             )
-            
+
             return MCPToolOutput(
                 tool_name=MCPToolName.START_THINKING,
                 session_id=session_id,
@@ -85,22 +90,22 @@ class MCPTools:
                 context={
                     "session_id": session_id,
                     "topic": input_data.topic,
-                    "complexity": input_data.complexity
+                    "complexity": input_data.complexity,
                 },
                 next_action="调用next_step工具继续流程",
                 metadata={
                     "flow_type": input_data.flow_type,
-                    "expected_output": "JSON格式的问题分解结果"
-                }
+                    "expected_output": "JSON格式的问题分解结果",
+                },
             )
-            
+
         except Exception as e:
             raise DeepThinkingError(f"Failed to start thinking session: {str(e)}")
-    
+
     def next_step(self, input_data: NextStepInput) -> MCPToolOutput:
         """
         Get the next step in the thinking process
-        
+
         Returns appropriate prompt template based on current flow state
         Implements enhanced flow control and template selection logic
         """
@@ -111,10 +116,9 @@ class MCPTools:
             except Exception:
                 # Session not found - return session recovery prompt
                 recovery_prompt = self.template_manager.get_template(
-                    "session_recovery",
-                    {"session_id": input_data.session_id}
+                    "session_recovery", {"session_id": input_data.session_id}
                 )
-                
+
                 return MCPToolOutput(
                     tool_name=MCPToolName.NEXT_STEP,
                     session_id=input_data.session_id,
@@ -123,14 +127,17 @@ class MCPTools:
                     instructions="会话已丢失，请选择如何继续",
                     context={"error": "session_not_found"},
                     next_action="重新开始或尝试恢复会话",
-                    metadata={"error_recovery": True}
+                    metadata={"error_recovery": True},
                 )
-            
+
             # Extract quality score from step result if provided
             quality_score = None
-            if input_data.quality_feedback and "quality_score" in input_data.quality_feedback:
+            if (
+                input_data.quality_feedback
+                and "quality_score" in input_data.quality_feedback
+            ):
                 quality_score = input_data.quality_feedback["quality_score"]
-            
+
             # Save previous step result with enhanced context
             self.session_manager.add_step_result(
                 input_data.session_id,
@@ -140,47 +147,41 @@ class MCPTools:
                 metadata={
                     "step_completion_time": datetime.now().isoformat(),
                     "quality_feedback": input_data.quality_feedback,
-                    "step_context": session.context
+                    "step_context": session.context,
                 },
-                quality_score=quality_score
+                quality_score=quality_score,
             )
-            
+
             # Determine next step based on flow and current state
             next_step_info = self._determine_next_step_with_context(
-                session, 
-                input_data.step_result,
-                input_data.quality_feedback
+                session, input_data.step_result, input_data.quality_feedback
             )
-            
+
             if not next_step_info:
                 # Flow completed
                 return self._handle_flow_completion(input_data.session_id)
-            
+
             # Update session state with enhanced tracking
             self.session_manager.update_session_step(
                 input_data.session_id,
                 next_step_info["step_name"],
                 step_result=input_data.step_result,
-                quality_score=quality_score
+                quality_score=quality_score,
             )
-            
+
             # Build enhanced template parameters with full context
             template_params = self._build_enhanced_template_params(
-                session, 
-                input_data.step_result,
-                next_step_info
+                session, input_data.step_result, next_step_info
             )
-            
+
             # Get appropriate prompt template with smart selection
             prompt_template = self._get_contextual_template(
-                next_step_info["template_name"],
-                template_params,
-                session
+                next_step_info["template_name"], template_params, session
             )
-            
+
             # Build comprehensive context for the next step
             step_context = self._build_step_context(session, next_step_info)
-            
+
             return MCPToolOutput(
                 tool_name=MCPToolName.NEXT_STEP,
                 session_id=input_data.session_id,
@@ -194,19 +195,20 @@ class MCPTools:
                     "flow_progress": f"{session.step_number + 1}/{self.flow_manager.get_total_steps(session.flow_type)}",
                     "flow_type": session.flow_type,
                     "previous_step": session.current_step,
-                    "quality_gate_passed": quality_score is None or quality_score >= 0.7,
+                    "quality_gate_passed": quality_score is None
+                    or quality_score >= 0.7,
                     "template_selected": next_step_info["template_name"],
-                    "context_enriched": True
-                }
+                    "context_enriched": True,
+                },
             )
-            
+
         except Exception as e:
             return self._handle_error("next_step", str(e), input_data.session_id)
-    
+
     def analyze_step(self, input_data: AnalyzeStepInput) -> MCPToolOutput:
         """
         Analyze the quality of a completed step
-        
+
         Implements comprehensive quality analysis with:
         - Step-specific evaluation criteria
         - Quality gate enforcement
@@ -218,61 +220,62 @@ class MCPTools:
             session = self.session_manager.get_session(input_data.session_id)
             if not session:
                 return self._handle_session_not_found(input_data.session_id)
-            
+
             # Perform format validation first
-            format_validation = self._validate_step_format(input_data.step_name, input_data.step_result)
+            format_validation = self._validate_step_format(
+                input_data.step_name, input_data.step_result
+            )
             if not format_validation["valid"]:
                 return self._handle_format_validation_failure(
-                    input_data.session_id,
-                    input_data.step_name,
-                    format_validation
+                    input_data.session_id, input_data.step_name, format_validation
                 )
-            
+
             # Get step-specific analysis template
-            analysis_template_name = self._get_analysis_template_name(input_data.step_name)
-            
+            analysis_template_name = self._get_analysis_template_name(
+                input_data.step_name
+            )
+
             # Build comprehensive template parameters
             template_params = self._build_analysis_template_params(
-                session, 
-                input_data.step_name, 
+                session,
+                input_data.step_name,
                 input_data.step_result,
-                input_data.analysis_type
+                input_data.analysis_type,
             )
-            
+
             # Get quality threshold for this step
-            quality_threshold = self._get_quality_threshold(input_data.step_name, session.flow_type)
-            
+            quality_threshold = self._get_quality_threshold(
+                input_data.step_name, session.flow_type
+            )
+
             # Generate improvement suggestions based on step type
             improvement_suggestions = self._generate_improvement_suggestions(
-                input_data.step_name, 
-                input_data.step_result,
-                session.context
+                input_data.step_name, input_data.step_result, session.context
             )
-            
+
             # Add quality gate information to template params
-            template_params.update({
-                "quality_threshold": quality_threshold,
-                "improvement_suggestions": improvement_suggestions,
-                "quality_gate_passed": "待评估",
-                "quality_level": "待评估",
-                "next_step_recommendation": self._get_next_step_recommendation(
-                    input_data.step_name, session
-                )
-            })
-            
+            template_params.update(
+                {
+                    "quality_threshold": quality_threshold,
+                    "improvement_suggestions": improvement_suggestions,
+                    "quality_gate_passed": "待评估",
+                    "quality_level": "待评估",
+                    "next_step_recommendation": self._get_next_step_recommendation(
+                        input_data.step_name, session
+                    ),
+                }
+            )
+
             # Get analysis prompt template
             prompt_template = self.template_manager.get_template(
-                analysis_template_name,
-                template_params
+                analysis_template_name, template_params
             )
-            
+
             # Generate step-specific instructions
             instructions = self._generate_analysis_instructions(
-                input_data.step_name, 
-                input_data.analysis_type,
-                quality_threshold
+                input_data.step_name, input_data.analysis_type, quality_threshold
             )
-            
+
             return MCPToolOutput(
                 tool_name=MCPToolName.ANALYZE_STEP,
                 session_id=input_data.session_id,
@@ -285,27 +288,31 @@ class MCPTools:
                     "quality_threshold": quality_threshold,
                     "format_validated": True,
                     "step_context": session.context,
-                    "improvement_suggestions_available": True
+                    "improvement_suggestions_available": True,
                 },
-                next_action=self._determine_analysis_next_action(input_data.step_name, session),
+                next_action=self._determine_analysis_next_action(
+                    input_data.step_name, session
+                ),
                 metadata={
                     "quality_check": True,
                     "step_analyzed": input_data.step_name,
                     "analysis_template": analysis_template_name,
                     "quality_threshold": quality_threshold,
                     "format_validation_passed": True,
-                    "analysis_criteria_count": self._get_analysis_criteria_count(input_data.step_name),
-                    "improvement_suggestions_generated": True
-                }
+                    "analysis_criteria_count": self._get_analysis_criteria_count(
+                        input_data.step_name
+                    ),
+                    "improvement_suggestions_generated": True,
+                },
             )
-            
+
         except Exception as e:
             return self._handle_error("analyze_step", str(e), input_data.session_id)
-    
+
     def complete_thinking(self, input_data: CompleteThinkingInput) -> MCPToolOutput:
         """
         Complete the thinking process and generate final report
-        
+
         Enhanced implementation with:
         - Comprehensive session state update and result aggregation
         - Quality metrics calculation and analysis
@@ -317,16 +324,16 @@ class MCPTools:
             session = self.session_manager.get_session(input_data.session_id)
             if not session:
                 return self._handle_session_not_found(input_data.session_id)
-            
+
             # Calculate comprehensive quality metrics
             quality_metrics = self._calculate_comprehensive_quality_metrics(session)
-            
+
             # Generate session summary with detailed analysis
             session_summary = self._generate_detailed_session_summary(session)
-            
+
             # Get full thinking trace with enhanced metadata
             thinking_trace = self.session_manager.get_full_trace(input_data.session_id)
-            
+
             # Prepare final results for session completion
             final_results = {
                 "completion_timestamp": datetime.now().isoformat(),
@@ -336,37 +343,41 @@ class MCPTools:
                 "final_insights": input_data.final_insights or "",
                 "thinking_trace_id": thinking_trace.get("session_id"),
                 "flow_type": session.flow_type,
-                "session_duration_minutes": self._calculate_session_duration_minutes(session)
+                "session_duration_minutes": self._calculate_session_duration_minutes(
+                    session
+                ),
             }
-            
+
             # Mark session as completed with comprehensive final results
             completion_success = self.session_manager.complete_session(
-                input_data.session_id, 
-                final_results=final_results
+                input_data.session_id, final_results=final_results
             )
-            
+
             if not completion_success:
                 # Handle completion failure but continue with report generation
-                final_results["completion_warning"] = "Session completion partially failed but report can still be generated"
-            
+                final_results["completion_warning"] = (
+                    "Session completion partially failed but report can still be generated"
+                )
+
             # Build enhanced template parameters for comprehensive summary
             template_params = self._build_comprehensive_summary_params(
-                session, 
-                quality_metrics, 
-                session_summary, 
+                session,
+                quality_metrics,
+                session_summary,
                 thinking_trace,
-                input_data.final_insights
+                input_data.final_insights,
             )
-            
+
             # Get comprehensive summary template
             prompt_template = self.template_manager.get_template(
-                "comprehensive_summary",
-                template_params
+                "comprehensive_summary", template_params
             )
-            
+
             # Generate detailed instructions for final report
-            instructions = self._generate_completion_instructions(quality_metrics, session)
-            
+            instructions = self._generate_completion_instructions(
+                quality_metrics, session
+            )
+
             return MCPToolOutput(
                 tool_name=MCPToolName.COMPLETE_THINKING,
                 session_id=input_data.session_id,
@@ -380,7 +391,7 @@ class MCPTools:
                     "session_summary": session_summary,
                     "thinking_trace_available": True,
                     "final_results": final_results,
-                    "completion_success": completion_success
+                    "completion_success": completion_success,
                 },
                 next_action="生成最终综合报告，思维流程已完成",
                 metadata={
@@ -390,18 +401,26 @@ class MCPTools:
                         "average_quality": quality_metrics.get("average_quality", 0),
                         "quality_trend": quality_metrics.get("quality_trend", "stable"),
                         "total_steps": session.step_number,
-                        "high_quality_steps": quality_metrics.get("high_quality_steps", 0)
+                        "high_quality_steps": quality_metrics.get(
+                            "high_quality_steps", 0
+                        ),
                     },
                     "thinking_trace_available": True,
                     "report_generation_ready": True,
-                    "session_duration_minutes": final_results["session_duration_minutes"]
-                }
+                    "session_duration_minutes": final_results[
+                        "session_duration_minutes"
+                    ],
+                },
             )
-            
+
         except Exception as e:
-            return self._handle_error("complete_thinking", str(e), input_data.session_id)
-    
-    def _build_template_params(self, session: SessionState, previous_result: str) -> Dict[str, Any]:
+            return self._handle_error(
+                "complete_thinking", str(e), input_data.session_id
+            )
+
+    def _build_template_params(
+        self, session: SessionState, previous_result: str
+    ) -> Dict[str, Any]:
         """Build template parameters from session context"""
         return {
             "topic": session.topic,
@@ -409,11 +428,15 @@ class MCPTools:
             "previous_result": previous_result,
             "context": session.context,
             "step_results": session.step_results,
-            "session_id": session.session_id
+            "session_id": session.session_id,
         }
-    
-    def _determine_next_step_with_context(self, session: SessionState, step_result: str, 
-                                        quality_feedback: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+
+    def _determine_next_step_with_context(
+        self,
+        session: SessionState,
+        step_result: str,
+        quality_feedback: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
         """
         Determine next step with enhanced context awareness
         Considers quality feedback and adaptive flow control
@@ -424,16 +447,14 @@ class MCPTools:
             return {
                 "step_name": f"improve_{session.current_step}",
                 "template_name": "improvement_guidance",
-                "instructions": "根据质量反馈改进当前步骤的结果"
+                "instructions": "根据质量反馈改进当前步骤的结果",
             }
-        
+
         # Use flow manager for standard next step
         next_step_info = self.flow_manager.get_next_step(
-            session.flow_type,
-            session.current_step,
-            step_result
+            session.flow_type, session.current_step, step_result
         )
-        
+
         # Enhance with adaptive logic
         if next_step_info:
             # Adapt template based on complexity and context
@@ -441,19 +462,23 @@ class MCPTools:
                 next_step_info["template_name"] = self._get_complex_template_variant(
                     next_step_info["template_name"]
                 )
-            
+
             # Add contextual instructions
             next_step_info["instructions"] = self._generate_contextual_instructions(
                 next_step_info, session, step_result
             )
-        
+
         return next_step_info
-    
-    def _build_enhanced_template_params(self, session: SessionState, previous_result: str, 
-                                      next_step_info: Dict[str, Any]) -> Dict[str, Any]:
+
+    def _build_enhanced_template_params(
+        self,
+        session: SessionState,
+        previous_result: str,
+        next_step_info: Dict[str, Any],
+    ) -> Dict[str, Any]:
         """Build enhanced template parameters with full context"""
         base_params = self._build_template_params(session, previous_result)
-        
+
         # Add enhanced context
         enhanced_params = {
             **base_params,
@@ -462,12 +487,14 @@ class MCPTools:
             "flow_progress": f"{session.step_number}/{self.flow_manager.get_total_steps(session.flow_type)}",
             "complexity": session.context.get("complexity", "moderate"),
             "focus": session.context.get("focus", ""),
-            "domain_context": session.context.get("domain_context", session.context.get("focus", "general analysis")),
+            "domain_context": session.context.get(
+                "domain_context", session.context.get("focus", "general analysis")
+            ),
             "previous_steps_summary": self._get_previous_steps_summary(session),
             "quality_history": session.quality_scores,
-            "session_duration": self._calculate_session_duration(session)
+            "session_duration": self._calculate_session_duration(session),
         }
-        
+
         # Add step-specific context
         if next_step_info["step_name"] == "evidence":
             enhanced_params.update(self._get_evidence_context(session, previous_result))
@@ -475,28 +502,40 @@ class MCPTools:
             enhanced_params.update(self._get_evaluation_context(session))
         elif next_step_info["step_name"] == "reflect":
             enhanced_params.update(self._get_reflection_context(session))
-        
+
         return enhanced_params
-    
-    def _get_contextual_template(self, template_name: str, template_params: Dict[str, Any], 
-                               session: SessionState) -> str:
+
+    def _get_contextual_template(
+        self, template_name: str, template_params: Dict[str, Any], session: SessionState
+    ) -> str:
         """Get template with smart contextual selection"""
         # Select appropriate template variant based on context
         selected_template = template_name
-        
+
         # Adapt template based on session context
-        if session.context.get("complexity") == "simple" and template_name == "decomposition":
+        if (
+            session.context.get("complexity") == "simple"
+            and template_name == "decomposition"
+        ):
             selected_template = "simple_decomposition"
-        elif session.context.get("complexity") == "complex" and template_name == "critical_evaluation":
+        elif (
+            session.context.get("complexity") == "complex"
+            and template_name == "critical_evaluation"
+        ):
             selected_template = "advanced_critical_evaluation"
-        
+
         # Fallback to original template if variant doesn't exist
         try:
-            return self.template_manager.get_template(selected_template, template_params)
-        except:
+            return self.template_manager.get_template(
+                selected_template, template_params
+            )
+        except Exception:
+            # Fall back to original template if variant doesn't exist
             return self.template_manager.get_template(template_name, template_params)
-    
-    def _build_step_context(self, session: SessionState, next_step_info: Dict[str, Any]) -> Dict[str, Any]:
+
+    def _build_step_context(
+        self, session: SessionState, next_step_info: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Build comprehensive context for the next step"""
         return {
             **session.context,
@@ -511,69 +550,79 @@ class MCPTools:
                 "step_type": next_step_info.get("step_type", "general"),
                 "template_used": next_step_info["template_name"],
                 "dependencies_met": True,
-                "adaptive_selection": True
-            }
+                "adaptive_selection": True,
+            },
         }
-    
-    def _generate_step_instructions(self, next_step_info: Dict[str, Any], session: SessionState) -> str:
+
+    def _generate_step_instructions(
+        self, next_step_info: Dict[str, Any], session: SessionState
+    ) -> str:
         """Generate contextual instructions for the step"""
-        base_instruction = next_step_info.get("instructions", f"Execute {next_step_info['step_name']} step")
-        
+        base_instruction = next_step_info.get(
+            "instructions", f"Execute {next_step_info['step_name']} step"
+        )
+
         # Add contextual guidance
         contextual_additions = []
-        
+
         if session.context.get("complexity") == "complex":
             contextual_additions.append("请特别注意分析的深度和全面性")
-        
+
         if session.quality_scores and min(session.quality_scores.values()) < 0.7:
             contextual_additions.append("请注意提高分析质量，确保逻辑清晰")
-        
+
         if len(session.step_results) > 3:
             contextual_additions.append("请参考之前步骤的结果，保持分析的连贯性")
-        
+
         if contextual_additions:
             return f"{base_instruction}。{' '.join(contextual_additions)}"
-        
+
         return base_instruction
-    
-    def _determine_next_action(self, next_step_info: Dict[str, Any], session: SessionState) -> str:
+
+    def _determine_next_action(
+        self, next_step_info: Dict[str, Any], session: SessionState
+    ) -> str:
         """Determine the recommended next action"""
         step_name = next_step_info["step_name"]
-        
+
         if step_name in ["decompose", "evidence"]:
             return "执行当前步骤后，建议调用analyze_step进行质量检查"
         elif step_name in ["evaluate", "reflect"]:
             return "完成当前步骤后，可以调用complete_thinking生成最终报告"
         else:
             return "继续执行思维流程，或调用analyze_step进行质量检查"
-    
+
     def _get_complex_template_variant(self, template_name: str) -> str:
         """Get complex variant of template if available"""
         complex_variants = {
             "decomposition": "advanced_decomposition",
             "critical_evaluation": "advanced_critical_evaluation",
-            "evidence_collection": "comprehensive_evidence_collection"
+            "evidence_collection": "comprehensive_evidence_collection",
         }
         return complex_variants.get(template_name, template_name)
-    
-    def _generate_contextual_instructions(self, next_step_info: Dict[str, Any], 
-                                        session: SessionState, step_result: str) -> str:
+
+    def _generate_contextual_instructions(
+        self, next_step_info: Dict[str, Any], session: SessionState, step_result: str
+    ) -> str:
         """Generate contextual instructions based on session state"""
         base_instruction = f"Execute {next_step_info['step_name']} step"
-        
+
         # Add context-specific guidance
-        if "evidence" in step_result.lower() and next_step_info["step_name"] == "evaluate":
+        if (
+            "evidence" in step_result.lower()
+            and next_step_info["step_name"] == "evaluate"
+        ):
             return "基于收集的证据进行批判性评估，重点关注证据质量和逻辑连贯性"
         elif "问题分解" in step_result and next_step_info["step_name"] == "evidence":
             return "针对分解的子问题收集相关证据，确保来源多样化和可信度"
-        
+
         return base_instruction
-    
+
     def _get_previous_steps_summary(self, session: SessionState) -> str:
         """Get summary of previous steps"""
         if not session.step_results:
             return "暂无完成的步骤"
-        
+
         summary_parts = []
         for step_name, result_data in session.step_results.items():
             if isinstance(result_data, dict):
@@ -581,63 +630,65 @@ class MCPTools:
                 summary_parts.append(f"- {step_name}: 已完成 (质量: {quality})")
             else:
                 summary_parts.append(f"- {step_name}: 已完成")
-        
+
         return "\n".join(summary_parts)
-    
+
     def _calculate_session_duration(self, session: SessionState) -> str:
         """Calculate session duration in minutes"""
         if session.created_at:
             duration = (datetime.now() - session.created_at).total_seconds() / 60
             return f"{duration:.1f} 分钟"
         return "未知"
-    
-    def _get_evidence_context(self, session: SessionState, previous_result: str) -> Dict[str, Any]:
+
+    def _get_evidence_context(
+        self, session: SessionState, previous_result: str
+    ) -> Dict[str, Any]:
         """Get context specific to evidence collection step"""
         context = {}
-        
+
         # Extract sub-questions from decomposition result
         if "sub_questions" in previous_result.lower():
             context["sub_question"] = "基于问题分解结果的子问题"
             context["keywords"] = ["相关关键词", "搜索词汇"]
-        
+
         return context
-    
+
     def _get_evaluation_context(self, session: SessionState) -> Dict[str, Any]:
         """Get context specific to evaluation step"""
         return {
             "content": "之前步骤的分析结果",
-            "context": session.context.get("focus", "综合分析")
+            "context": session.context.get("focus", "综合分析"),
         }
-    
+
     def _get_reflection_context(self, session: SessionState) -> Dict[str, Any]:
         """Get context specific to reflection step"""
         return {
             "thinking_history": self._get_previous_steps_summary(session),
-            "current_conclusions": "基于前面步骤得出的结论"
+            "current_conclusions": "基于前面步骤得出的结论",
         }
-    
+
     def _get_analysis_template_name(self, step_name: str) -> str:
         """Get appropriate analysis template based on step name"""
         analysis_templates = {
             "decompose_problem": "analyze_decomposition",
-            "collect_evidence": "analyze_evidence", 
+            "collect_evidence": "analyze_evidence",
             "multi_perspective_debate": "analyze_debate",
             "critical_evaluation": "analyze_evaluation",
             "bias_detection": "analyze_evaluation",
             "innovation_thinking": "analyze_evaluation",
-            "reflection": "analyze_reflection"
+            "reflection": "analyze_reflection",
         }
         return analysis_templates.get(step_name, "analyze_evaluation")
-    
+
     def _validate_step_format(self, step_name: str, step_result: str) -> Dict[str, Any]:
         """Validate the format of step results"""
         validation_result = {
             "valid": True,
             "issues": [],
             "expected_format": "",
-            "format_requirements": ""
+            "format_requirements": "",
         }
-        
+
         # Step-specific format validation
         if step_name == "decompose_problem":
             validation_result.update(self._validate_decomposition_format(step_result))
@@ -649,159 +700,202 @@ class MCPTools:
             validation_result.update(self._validate_evaluation_format(step_result))
         elif step_name == "reflection":
             validation_result.update(self._validate_reflection_format(step_result))
-        
+
         return validation_result
-    
+
     def _validate_decomposition_format(self, step_result: str) -> Dict[str, Any]:
         """Validate decomposition step format"""
         issues = []
-        
+
         # Check for JSON format
-        if not (step_result.strip().startswith('{') and step_result.strip().endswith('}')):
+        if not (
+            step_result.strip().startswith("{") and step_result.strip().endswith("}")
+        ):
             issues.append("结果应为JSON格式")
-        
+
         # Check for required fields
         required_fields = ["main_question", "sub_questions", "relationships"]
         for field in required_fields:
             if field not in step_result:
                 issues.append(f"缺少必需字段: {field}")
-        
+
         # Check sub_questions structure
         if "sub_questions" in step_result and "id" not in step_result:
             issues.append("sub_questions应包含id字段")
-        
+
         return {
             "valid": len(issues) == 0,
             "issues": issues,
             "expected_format": "JSON格式，包含main_question, sub_questions, relationships字段",
-            "format_requirements": "每个sub_question需包含id, question, priority, search_keywords等字段"
+            "format_requirements": "每个sub_question需包含id, question, priority, search_keywords等字段",
         }
-    
+
     def _validate_evidence_format(self, step_result: str) -> Dict[str, Any]:
         """Validate evidence collection format"""
         issues = []
-        
+
         # Check for structured evidence
         if "来源" not in step_result and "source" not in step_result.lower():
             issues.append("应包含证据来源信息")
-        
+
         if "可信度" not in step_result and "credibility" not in step_result.lower():
             issues.append("应包含可信度评估")
-        
+
         if len(step_result) < 50:  # More lenient threshold for testing
             issues.append("证据收集结果过于简短")
-        
+
         return {
             "valid": len(issues) == 0,
             "issues": issues,
             "expected_format": "结构化证据集合，包含来源、可信度、关键发现",
-            "format_requirements": "每个证据源应包含URL、标题、摘要、可信度评分"
+            "format_requirements": "每个证据源应包含URL、标题、摘要、可信度评分",
         }
-    
+
     def _validate_debate_format(self, step_result: str) -> Dict[str, Any]:
         """Validate debate step format"""
         issues = []
-        
+
         # Check for multiple perspectives
-        perspective_indicators = ["支持", "反对", "中立", "proponent", "opponent", "neutral"]
+        perspective_indicators = [
+            "支持",
+            "反对",
+            "中立",
+            "proponent",
+            "opponent",
+            "neutral",
+        ]
         if not any(indicator in step_result for indicator in perspective_indicators):
             issues.append("应包含多个不同角度的观点")
-        
+
         # Check for argument structure
         if "论据" not in step_result and "argument" not in step_result.lower():
             issues.append("应包含具体的论据和推理")
-        
+
         return {
             "valid": len(issues) == 0,
             "issues": issues,
             "expected_format": "多角度辩论结果，包含不同立场的观点",
-            "format_requirements": "每个角度应包含核心观点、支持论据、质疑要点"
+            "format_requirements": "每个角度应包含核心观点、支持论据、质疑要点",
         }
-    
+
     def _validate_evaluation_format(self, step_result: str) -> Dict[str, Any]:
         """Validate evaluation step format"""
         issues = []
-        
+
         # Check for scoring
         if "评分" not in step_result and "score" not in step_result.lower():
             issues.append("应包含具体的评分")
-        
+
         # Check for Paul-Elder standards (if applicable)
-        paul_elder_standards = ["准确性", "精确性", "相关性", "逻辑性", "广度", "深度", "重要性", "公正性", "清晰性"]
+        paul_elder_standards = [
+            "准确性",
+            "精确性",
+            "相关性",
+            "逻辑性",
+            "广度",
+            "深度",
+            "重要性",
+            "公正性",
+            "清晰性",
+        ]
         if any(standard in step_result for standard in paul_elder_standards[:3]):
             # If using Paul-Elder, check for comprehensive coverage
-            missing_standards = [std for std in paul_elder_standards if std not in step_result]
+            missing_standards = [
+                std for std in paul_elder_standards if std not in step_result
+            ]
             if len(missing_standards) > 6:  # Allow some flexibility
                 issues.append("Paul-Elder评估应覆盖更多标准")
-        
+
         return {
             "valid": len(issues) == 0,
             "issues": issues,
             "expected_format": "评估结果包含评分和详细分析",
-            "format_requirements": "应包含各项标准的评分、理由和改进建议"
+            "format_requirements": "应包含各项标准的评分、理由和改进建议",
         }
-    
+
     def _validate_reflection_format(self, step_result: str) -> Dict[str, Any]:
         """Validate reflection step format"""
         issues = []
-        
+
         # Check for reflection depth
-        reflection_indicators = ["反思", "学到", "改进", "洞察", "reflection", "insight"]
+        reflection_indicators = [
+            "反思",
+            "学到",
+            "改进",
+            "洞察",
+            "reflection",
+            "insight",
+        ]
         if not any(indicator in step_result for indicator in reflection_indicators):
             issues.append("应包含深度反思内容")
-        
+
         # Check for metacognitive elements - more lenient for testing
         if len(step_result) < 20:
             issues.append("反思内容应更加详细和深入")
-        
+
         return {
             "valid": len(issues) == 0,
             "issues": issues,
             "expected_format": "深度反思结果，包含过程反思和元认知分析",
-            "format_requirements": "应包含思维过程分析、学习收获、改进方向"
+            "format_requirements": "应包含思维过程分析、学习收获、改进方向",
         }
-    
-    def _build_analysis_template_params(self, session: SessionState, step_name: str, 
-                                      step_result: str, analysis_type: str) -> Dict[str, Any]:
+
+    def _build_analysis_template_params(
+        self,
+        session: SessionState,
+        step_name: str,
+        step_result: str,
+        analysis_type: str,
+    ) -> Dict[str, Any]:
         """Build comprehensive parameters for analysis templates"""
         base_params = {
             "step_name": step_name,
             "step_result": step_result,
             "analysis_type": analysis_type,
             "session_context": session.context,
-            "topic": session.topic
+            "topic": session.topic,
         }
-        
+
         # Add step-specific parameters
         if step_name == "decompose_problem":
-            base_params.update({
-                "original_topic": session.topic,
-                "complexity": session.context.get("complexity", "moderate")
-            })
+            base_params.update(
+                {
+                    "original_topic": session.topic,
+                    "complexity": session.context.get("complexity", "moderate"),
+                }
+            )
         elif step_name == "collect_evidence":
-            base_params.update({
-                "sub_question": self._extract_sub_question_from_context(session),
-                "search_keywords": self._extract_keywords_from_result(step_result)
-            })
+            base_params.update(
+                {
+                    "sub_question": self._extract_sub_question_from_context(session),
+                    "search_keywords": self._extract_keywords_from_result(step_result),
+                }
+            )
         elif step_name == "multi_perspective_debate":
-            base_params.update({
-                "debate_topic": self._extract_debate_topic(session, step_result),
-                "evidence_context": self._get_evidence_context_summary(session)
-            })
+            base_params.update(
+                {
+                    "debate_topic": self._extract_debate_topic(session, step_result),
+                    "evidence_context": self._get_evidence_context_summary(session),
+                }
+            )
         elif step_name in ["critical_evaluation", "bias_detection"]:
-            base_params.update({
-                "evaluated_content": self._get_evaluation_target(session),
-                "evaluation_context": session.context.get("focus", "综合分析")
-            })
+            base_params.update(
+                {
+                    "evaluated_content": self._get_evaluation_target(session),
+                    "evaluation_context": session.context.get("focus", "综合分析"),
+                }
+            )
         elif step_name == "reflection":
-            base_params.update({
-                "reflection_topic": session.topic,
-                "thinking_history": self._get_previous_steps_summary(session),
-                "current_conclusions": self._extract_current_conclusions(session)
-            })
-        
+            base_params.update(
+                {
+                    "reflection_topic": session.topic,
+                    "thinking_history": self._get_previous_steps_summary(session),
+                    "current_conclusions": self._extract_current_conclusions(session),
+                }
+            )
+
         return base_params
-    
+
     def _get_quality_threshold(self, step_name: str, flow_type: str) -> float:
         """Get quality threshold for specific step and flow type"""
         # Default thresholds by step type
@@ -812,9 +906,9 @@ class MCPTools:
             "critical_evaluation": 8.0,
             "bias_detection": 7.5,
             "innovation_thinking": 6.5,
-            "reflection": 7.0
+            "reflection": 7.0,
         }
-        
+
         # Adjust for flow type
         if flow_type == "comprehensive_analysis":
             return default_thresholds.get(step_name, 7.0)
@@ -822,12 +916,13 @@ class MCPTools:
             return default_thresholds.get(step_name, 6.0) - 0.5
         else:
             return default_thresholds.get(step_name, 7.0)
-    
-    def _generate_improvement_suggestions(self, step_name: str, step_result: str, 
-                                        context: Dict[str, Any]) -> str:
+
+    def _generate_improvement_suggestions(
+        self, step_name: str, step_result: str, context: Dict[str, Any]
+    ) -> str:
         """Generate step-specific improvement suggestions"""
         suggestions = []
-        
+
         if step_name == "decompose_problem":
             if len(step_result) < 500:
                 suggestions.append("问题分解应更加详细，提供更多子问题和分析角度")
@@ -835,7 +930,7 @@ class MCPTools:
                 suggestions.append("应为每个子问题设定优先级")
             if "search_keywords" not in step_result:
                 suggestions.append("应为每个子问题提供搜索关键词")
-        
+
         elif step_name == "collect_evidence":
             if "http" not in step_result and "www" not in step_result:
                 suggestions.append("应包含具体的网络来源链接")
@@ -843,28 +938,34 @@ class MCPTools:
                 suggestions.append("应收集更多不同来源的证据")
             if "可信度" not in step_result:
                 suggestions.append("应对每个证据来源进行可信度评估")
-        
+
         elif step_name == "multi_perspective_debate":
             if step_result.count("观点") < 3:
                 suggestions.append("应包含更多不同角度的观点")
             if "反驳" not in step_result and "质疑" not in step_result:
                 suggestions.append("应包含观点间的相互质疑和反驳")
-        
+
         elif step_name in ["critical_evaluation", "bias_detection"]:
             if "评分" not in step_result:
                 suggestions.append("应包含具体的量化评分")
             if "改进建议" not in step_result:
                 suggestions.append("应提供具体的改进建议")
-        
+
         elif step_name == "reflection":
             if len(step_result) < 400:
                 suggestions.append("反思应更加深入和详细")
             if "学到" not in step_result and "收获" not in step_result:
                 suggestions.append("应明确说明学习收获和洞察")
-        
-        return "\n".join(f"- {suggestion}" for suggestion in suggestions) if suggestions else "当前结果质量良好，建议保持"
-    
-    def _get_next_step_recommendation(self, step_name: str, session: SessionState) -> str:
+
+        return (
+            "\n".join(f"- {suggestion}" for suggestion in suggestions)
+            if suggestions
+            else "当前结果质量良好，建议保持"
+        )
+
+    def _get_next_step_recommendation(
+        self, step_name: str, session: SessionState
+    ) -> str:
         """Get recommendation for next step based on current step"""
         recommendations = {
             "decompose_problem": "如果质量达标，建议继续证据收集步骤",
@@ -873,33 +974,36 @@ class MCPTools:
             "critical_evaluation": "如果评估通过，可以进行偏见检测或创新思维",
             "bias_detection": "建议进行反思步骤，总结思维过程",
             "innovation_thinking": "建议进行最终反思和总结",
-            "reflection": "可以调用complete_thinking生成最终报告"
+            "reflection": "可以调用complete_thinking生成最终报告",
         }
         return recommendations.get(step_name, "根据质量评估结果决定下一步")
-    
-    def _generate_analysis_instructions(self, step_name: str, analysis_type: str, 
-                                      quality_threshold: float) -> str:
+
+    def _generate_analysis_instructions(
+        self, step_name: str, analysis_type: str, quality_threshold: float
+    ) -> str:
         """Generate step-specific analysis instructions"""
         base_instruction = f"请按照{step_name}步骤的专门评估标准进行详细分析"
-        
+
         quality_instruction = f"质量门控标准为{quality_threshold}/10分，请严格评估"
-        
+
         step_specific = {
             "decompose_problem": "重点关注问题分解的完整性、独立性和可操作性",
             "collect_evidence": "重点评估证据来源的多样性、可信度和相关性",
             "multi_perspective_debate": "重点分析观点的多样性、论证质量和互动深度",
             "critical_evaluation": "重点检查评估标准的应用和评分的准确性",
-            "reflection": "重点评估反思的深度和元认知质量"
+            "reflection": "重点评估反思的深度和元认知质量",
         }
-        
+
         specific_instruction = step_specific.get(step_name, "请进行全面的质量分析")
-        
+
         return f"{base_instruction}。{quality_instruction}。{specific_instruction}。请提供具体的改进建议和下一步建议。"
-    
-    def _determine_analysis_next_action(self, step_name: str, session: SessionState) -> str:
+
+    def _determine_analysis_next_action(
+        self, step_name: str, session: SessionState
+    ) -> str:
         """Determine next action after analysis"""
         return f"根据{step_name}步骤的分析结果，如果质量达标则继续下一步，否则需要改进当前步骤"
-    
+
     def _get_analysis_criteria_count(self, step_name: str) -> int:
         """Get number of analysis criteria for the step"""
         criteria_counts = {
@@ -907,27 +1011,29 @@ class MCPTools:
             "collect_evidence": 5,
             "multi_perspective_debate": 5,
             "critical_evaluation": 5,
-            "reflection": 5
+            "reflection": 5,
         }
         return criteria_counts.get(step_name, 5)
-    
-    def _handle_format_validation_failure(self, session_id: str, step_name: str, 
-                                        validation_result: Dict[str, Any]) -> MCPToolOutput:
+
+    def _handle_format_validation_failure(
+        self, session_id: str, step_name: str, validation_result: Dict[str, Any]
+    ) -> MCPToolOutput:
         """Handle format validation failure"""
         template_params = {
             "step_name": step_name,
             "expected_format": validation_result["expected_format"],
-            "format_issues": "\n".join(f"- {issue}" for issue in validation_result["issues"]),
+            "format_issues": "\n".join(
+                f"- {issue}" for issue in validation_result["issues"]
+            ),
             "format_requirements": validation_result["format_requirements"],
             "format_example": self._get_format_example(step_name),
-            "common_format_errors": self._get_common_format_errors(step_name)
+            "common_format_errors": self._get_common_format_errors(step_name),
         }
-        
+
         prompt_template = self.template_manager.get_template(
-            "format_validation_failed",
-            template_params
+            "format_validation_failed", template_params
         )
-        
+
         return MCPToolOutput(
             tool_name=MCPToolName.ANALYZE_STEP,
             session_id=session_id,
@@ -937,19 +1043,19 @@ class MCPTools:
             context={
                 "format_validation_failed": True,
                 "step_name": step_name,
-                "validation_issues": validation_result["issues"]
+                "validation_issues": validation_result["issues"],
             },
             next_action="修正格式问题后重新提交步骤结果",
             metadata={
                 "format_validation": False,
-                "validation_issues_count": len(validation_result["issues"])
-            }
+                "validation_issues_count": len(validation_result["issues"]),
+            },
         )
-    
+
     def _get_format_example(self, step_name: str) -> str:
         """Get format example for specific step"""
         examples = {
-            "decompose_problem": '''
+            "decompose_problem": """
 {
   "main_question": "如何提高教育质量？",
   "sub_questions": [
@@ -962,8 +1068,8 @@ class MCPTools:
     }
   ],
   "relationships": ["问题1是问题2的前提"]
-}''',
-            "collect_evidence": '''
+}""",
+            "collect_evidence": """
 证据来源1：
 - 标题：教育质量研究报告
 - URL：https://example.com/report
@@ -974,8 +1080,8 @@ class MCPTools:
 - 标题：专家访谈
 - URL：https://example.com/interview  
 - 可信度：9/10
-- 关键发现：...''',
-            "multi_perspective_debate": '''
+- 关键发现：...""",
+            "multi_perspective_debate": """
 支持方观点：
 - 核心论点：...
 - 支持论据：...
@@ -986,53 +1092,52 @@ class MCPTools:
 
 中立分析：
 - 平衡观点：...
-- 综合评估：...'''
+- 综合评估：...""",
         }
         return examples.get(step_name, "请参考步骤要求的标准格式")
-    
+
     def _get_common_format_errors(self, step_name: str) -> str:
         """Get common format errors for specific step"""
         errors = {
             "decompose_problem": "常见错误：忘记JSON格式、缺少必需字段、子问题描述过于简单",
             "collect_evidence": "常见错误：缺少来源链接、没有可信度评估、证据过于简单",
-            "multi_perspective_debate": "常见错误：观点单一、缺少互动、论据不充分"
+            "multi_perspective_debate": "常见错误：观点单一、缺少互动、论据不充分",
         }
         return errors.get(step_name, "请确保格式完整和规范")
-    
+
     # Helper methods for extracting information from session context
     def _extract_sub_question_from_context(self, session: SessionState) -> str:
         """Extract sub-question from session context"""
         # This would extract from previous decomposition results
         return session.context.get("current_sub_question", "基于问题分解的子问题")
-    
+
     def _extract_keywords_from_result(self, step_result: str) -> str:
         """Extract keywords from step result"""
         # Simple keyword extraction - in practice this could be more sophisticated
         return "相关搜索关键词"
-    
+
     def _extract_debate_topic(self, session: SessionState, step_result: str) -> str:
         """Extract debate topic from context"""
         return session.context.get("debate_topic", session.topic)
-    
+
     def _get_evidence_context_summary(self, session: SessionState) -> str:
         """Get summary of evidence collection context"""
         return "基于证据收集的背景信息"
-    
+
     def _get_evaluation_target(self, session: SessionState) -> str:
         """Get the target content for evaluation"""
         return "需要评估的内容"
-    
+
     def _extract_current_conclusions(self, session: SessionState) -> str:
         """Extract current conclusions from session"""
         return "基于前面步骤得出的当前结论"
-    
+
     def _handle_session_not_found(self, session_id: str) -> MCPToolOutput:
         """Handle case where session is not found"""
         recovery_prompt = self.template_manager.get_template(
-            "session_recovery",
-            {"session_id": session_id}
+            "session_recovery", {"session_id": session_id}
         )
-        
+
         return MCPToolOutput(
             tool_name=MCPToolName.NEXT_STEP,
             session_id=session_id,
@@ -1041,16 +1146,15 @@ class MCPTools:
             instructions="会话已丢失，请选择如何继续",
             context={"error": "session_not_found"},
             next_action="重新开始或尝试恢复会话",
-            metadata={"error_recovery": True}
+            metadata={"error_recovery": True},
         )
-    
+
     def _handle_flow_completion(self, session_id: str) -> MCPToolOutput:
         """Handle flow completion"""
         completion_prompt = self.template_manager.get_template(
-            "flow_completion",
-            {"session_id": session_id}
+            "flow_completion", {"session_id": session_id}
         )
-        
+
         return MCPToolOutput(
             tool_name=MCPToolName.COMPLETE_THINKING,
             session_id=session_id,
@@ -1059,20 +1163,22 @@ class MCPTools:
             instructions="思维流程已完成，准备生成最终报告",
             context={"flow_completed": True},
             next_action="调用complete_thinking生成最终报告",
-            metadata={"ready_for_completion": True}
+            metadata={"ready_for_completion": True},
         )
-    
-    def _handle_error(self, tool_name: str, error_message: str, session_id: Optional[str] = None) -> MCPToolOutput:
+
+    def _handle_error(
+        self, tool_name: str, error_message: str, session_id: Optional[str] = None
+    ) -> MCPToolOutput:
         """Handle tool execution errors"""
         error_prompt = self.template_manager.get_template(
             "error_recovery",
             {
                 "tool_name": tool_name,
                 "error_message": error_message,
-                "session_id": session_id
-            }
+                "session_id": session_id,
+            },
         )
-        
+
         return MCPToolOutput(
             tool_name=MCPToolName.NEXT_STEP,
             session_id=session_id,
@@ -1082,21 +1188,20 @@ class MCPTools:
             context={
                 "error": True,
                 "error_message": error_message,
-                "failed_tool": tool_name
+                "failed_tool": tool_name,
             },
             next_action="选择错误恢复选项",
-            metadata={
-                "error_recovery": True,
-                "original_tool": tool_name
-            }
+            metadata={"error_recovery": True, "original_tool": tool_name},
         )
-    
+
     # Enhanced helper methods for complete_thinking tool
-    
-    def _calculate_comprehensive_quality_metrics(self, session: SessionState) -> Dict[str, Any]:
+
+    def _calculate_comprehensive_quality_metrics(
+        self, session: SessionState
+    ) -> Dict[str, Any]:
         """
         Calculate comprehensive quality metrics for the session
-        
+
         Returns detailed quality analysis including:
         - Average quality score
         - Quality trend analysis
@@ -1105,7 +1210,7 @@ class MCPTools:
         - Improvement recommendations
         """
         quality_scores = session.quality_scores
-        
+
         if not quality_scores:
             return {
                 "average_quality": 0.0,
@@ -1114,31 +1219,33 @@ class MCPTools:
                 "high_quality_steps": 0,
                 "quality_distribution": {},
                 "improvement_areas": ["No quality data available"],
-                "overall_assessment": "insufficient_data"
+                "overall_assessment": "insufficient_data",
             }
-        
+
         # Calculate basic metrics
         scores = list(quality_scores.values())
         average_quality = sum(scores) / len(scores)
         high_quality_steps = sum(1 for score in scores if score >= 8.0)
-        
+
         # Quality trend analysis
         quality_trend = self._analyze_quality_trend(scores)
-        
+
         # Quality distribution
         quality_distribution = {
             "excellent": sum(1 for score in scores if score >= 9.0),
             "good": sum(1 for score in scores if 7.0 <= score < 9.0),
             "acceptable": sum(1 for score in scores if 5.0 <= score < 7.0),
-            "needs_improvement": sum(1 for score in scores if score < 5.0)
+            "needs_improvement": sum(1 for score in scores if score < 5.0),
         }
-        
+
         # Identify improvement areas
         improvement_areas = self._identify_improvement_areas(quality_scores)
-        
+
         # Overall assessment
-        overall_assessment = self._determine_overall_assessment(average_quality, quality_distribution)
-        
+        overall_assessment = self._determine_overall_assessment(
+            average_quality, quality_distribution
+        )
+
         return {
             "average_quality": round(average_quality, 2),
             "quality_trend": quality_trend,
@@ -1149,45 +1256,57 @@ class MCPTools:
             "improvement_areas": improvement_areas,
             "overall_assessment": overall_assessment,
             "quality_consistency": self._calculate_quality_consistency(scores),
-            "best_performing_step": max(quality_scores.items(), key=lambda x: x[1]) if quality_scores else None,
-            "lowest_performing_step": min(quality_scores.items(), key=lambda x: x[1]) if quality_scores else None
+            "best_performing_step": (
+                max(quality_scores.items(), key=lambda x: x[1])
+                if quality_scores
+                else None
+            ),
+            "lowest_performing_step": (
+                min(quality_scores.items(), key=lambda x: x[1])
+                if quality_scores
+                else None
+            ),
         }
-    
+
     def _analyze_quality_trend(self, scores: List[float]) -> str:
         """Analyze the trend in quality scores"""
         if len(scores) < 2:
             return "insufficient_data"
-        
+
         # Simple trend analysis
-        first_half = scores[:len(scores)//2]
-        second_half = scores[len(scores)//2:]
-        
+        first_half = scores[: len(scores) // 2]
+        second_half = scores[len(scores) // 2 :]
+
         first_avg = sum(first_half) / len(first_half)
         second_avg = sum(second_half) / len(second_half)
-        
+
         diff = second_avg - first_avg
-        
+
         if diff > 0.5:
             return "improving"
         elif diff < -0.5:
             return "declining"
         else:
             return "stable"
-    
-    def _identify_improvement_areas(self, quality_scores: Dict[str, float]) -> List[str]:
+
+    def _identify_improvement_areas(
+        self, quality_scores: Dict[str, float]
+    ) -> List[str]:
         """Identify areas that need improvement based on quality scores"""
         improvement_areas = []
-        
+
         for step_name, score in quality_scores.items():
             if score < 6.0:
                 improvement_areas.append(f"{step_name} (得分: {score})")
-        
+
         if not improvement_areas:
             improvement_areas.append("所有步骤质量良好")
-        
+
         return improvement_areas
-    
-    def _determine_overall_assessment(self, average_quality: float, quality_distribution: Dict[str, int]) -> str:
+
+    def _determine_overall_assessment(
+        self, average_quality: float, quality_distribution: Dict[str, int]
+    ) -> str:
         """Determine overall quality assessment"""
         if average_quality >= 8.5:
             return "excellent"
@@ -1197,22 +1316,24 @@ class MCPTools:
             return "acceptable"
         else:
             return "needs_improvement"
-    
+
     def _calculate_quality_consistency(self, scores: List[float]) -> float:
         """Calculate quality consistency (lower variance = higher consistency)"""
         if len(scores) < 2:
             return 1.0
-        
+
         mean = sum(scores) / len(scores)
         variance = sum((score - mean) ** 2 for score in scores) / len(scores)
-        
+
         # Convert to consistency score (0-1, higher is more consistent)
         consistency = max(0, 1 - (variance / 10))  # Normalize variance
         return round(consistency, 3)
-    
-    def _generate_detailed_session_summary(self, session: SessionState) -> Dict[str, Any]:
+
+    def _generate_detailed_session_summary(
+        self, session: SessionState
+    ) -> Dict[str, Any]:
         """Generate detailed session summary with step analysis"""
-        
+
         # Get step details from database
         try:
             steps = self.session_manager.db.get_session_steps(session.session_id)
@@ -1220,28 +1341,28 @@ class MCPTools:
         except Exception:
             steps = []
             results = []
-        
+
         # Organize results by step
         step_results_map = {}
         for result in results:
-            step_id = result.get('step_id')
+            step_id = result.get("step_id")
             if step_id not in step_results_map:
                 step_results_map[step_id] = []
             step_results_map[step_id].append(result)
-        
+
         # Build detailed step summary
         detailed_steps = []
         for step in steps:
             step_summary = {
-                "step_name": step.get('step_name', 'unknown'),
-                "step_type": step.get('step_type', 'general'),
-                "quality_score": step.get('quality_score'),
-                "execution_time_ms": step.get('execution_time_ms'),
-                "results_count": len(step_results_map.get(step.get('id'), [])),
-                "timestamp": step.get('created_at')
+                "step_name": step.get("step_name", "unknown"),
+                "step_type": step.get("step_type", "general"),
+                "quality_score": step.get("quality_score"),
+                "execution_time_ms": step.get("execution_time_ms"),
+                "results_count": len(step_results_map.get(step.get("id"), [])),
+                "timestamp": step.get("created_at"),
             }
             detailed_steps.append(step_summary)
-        
+
         return {
             "session_id": session.session_id,
             "topic": session.topic,
@@ -1250,30 +1371,35 @@ class MCPTools:
             "session_duration": self._calculate_session_duration_minutes(session),
             "detailed_steps": detailed_steps,
             "context_summary": session.context,
-            "completion_status": "completed"
+            "completion_status": "completed",
         }
-    
+
     def _calculate_session_duration_minutes(self, session: SessionState) -> float:
         """Calculate session duration in minutes"""
         if session.created_at and session.updated_at:
             duration = (session.updated_at - session.created_at).total_seconds() / 60
             return round(duration, 2)
         return 0.0
-    
-    def _build_comprehensive_summary_params(self, session: SessionState, quality_metrics: Dict[str, Any], 
-                                          session_summary: Dict[str, Any], thinking_trace: Dict[str, Any],
-                                          final_insights: Optional[str]) -> Dict[str, Any]:
+
+    def _build_comprehensive_summary_params(
+        self,
+        session: SessionState,
+        quality_metrics: Dict[str, Any],
+        session_summary: Dict[str, Any],
+        thinking_trace: Dict[str, Any],
+        final_insights: Optional[str],
+    ) -> Dict[str, Any]:
         """Build comprehensive parameters for the summary template"""
-        
+
         # Format quality metrics for display
         quality_display = self._format_quality_metrics_for_display(quality_metrics)
-        
+
         # Format step summary for display
         step_summary_display = self._format_step_summary_for_display(session_summary)
-        
+
         # Format thinking trace for display
         trace_display = self._format_thinking_trace_for_display(thinking_trace)
-        
+
         return {
             "topic": session.topic,
             "flow_type": session.flow_type,
@@ -1286,64 +1412,74 @@ class MCPTools:
             "completion_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "overall_assessment": quality_metrics.get("overall_assessment", "unknown"),
             "average_quality": quality_metrics.get("average_quality", 0),
-            "improvement_areas": "\n".join(quality_metrics.get("improvement_areas", [])),
-            "best_step": quality_metrics.get("best_performing_step", ["无", 0])[0] if quality_metrics.get("best_performing_step") else "无",
-            "session_context": session.context
+            "improvement_areas": "\n".join(
+                quality_metrics.get("improvement_areas", [])
+            ),
+            "best_step": (
+                quality_metrics.get("best_performing_step", ["无", 0])[0]
+                if quality_metrics.get("best_performing_step")
+                else "无"
+            ),
+            "session_context": session.context,
         }
-    
-    def _format_quality_metrics_for_display(self, quality_metrics: Dict[str, Any]) -> str:
+
+    def _format_quality_metrics_for_display(
+        self, quality_metrics: Dict[str, Any]
+    ) -> str:
         """Format quality metrics for template display"""
         if not quality_metrics:
             return "无质量数据"
-        
+
         lines = [
             f"平均质量得分: {quality_metrics.get('average_quality', 0)}/10",
             f"质量趋势: {quality_metrics.get('quality_trend', 'unknown')}",
             f"高质量步骤数: {quality_metrics.get('high_quality_steps', 0)}",
             f"总体评估: {quality_metrics.get('overall_assessment', 'unknown')}",
-            f"质量一致性: {quality_metrics.get('quality_consistency', 0)}"
+            f"质量一致性: {quality_metrics.get('quality_consistency', 0)}",
         ]
-        
-        if quality_metrics.get('best_performing_step'):
-            best_step, best_score = quality_metrics['best_performing_step']
+
+        if quality_metrics.get("best_performing_step"):
+            best_step, best_score = quality_metrics["best_performing_step"]
             lines.append(f"最佳步骤: {best_step} ({best_score}/10)")
-        
+
         return "\n".join(lines)
-    
+
     def _format_step_summary_for_display(self, session_summary: Dict[str, Any]) -> str:
         """Format step summary for template display"""
-        if not session_summary.get('detailed_steps'):
+        if not session_summary.get("detailed_steps"):
             return "无步骤数据"
-        
+
         lines = []
-        for step in session_summary['detailed_steps']:
-            step_name = step.get('step_name', 'unknown')
-            quality = step.get('quality_score', 'N/A')
+        for step in session_summary["detailed_steps"]:
+            step_name = step.get("step_name", "unknown")
+            quality = step.get("quality_score", "N/A")
             lines.append(f"- {step_name}: 完成 (质量: {quality})")
-        
+
         return "\n".join(lines)
-    
+
     def _format_thinking_trace_for_display(self, thinking_trace: Dict[str, Any]) -> str:
         """Format thinking trace for template display"""
-        if not thinking_trace or thinking_trace.get('error'):
+        if not thinking_trace or thinking_trace.get("error"):
             return "思维轨迹不可用"
-        
+
         lines = [
             f"会话ID: {thinking_trace.get('session_id', 'unknown')}",
             f"流程类型: {thinking_trace.get('flow_type', 'unknown')}",
             f"总时长: {thinking_trace.get('total_duration', 0)} 秒",
-            f"步骤数量: {len(thinking_trace.get('steps', []))}"
+            f"步骤数量: {len(thinking_trace.get('steps', []))}",
         ]
-        
+
         return "\n".join(lines)
-    
-    def _generate_completion_instructions(self, quality_metrics: Dict[str, Any], session: SessionState) -> str:
+
+    def _generate_completion_instructions(
+        self, quality_metrics: Dict[str, Any], session: SessionState
+    ) -> str:
         """Generate detailed instructions for final report generation"""
         base_instruction = "请生成详细的综合报告，包含所有关键发现和洞察"
-        
+
         # Add quality-specific guidance
         quality_guidance = []
-        
+
         overall_assessment = quality_metrics.get("overall_assessment", "unknown")
         if overall_assessment == "excellent":
             quality_guidance.append("质量优秀，重点突出核心洞察和创新观点")
@@ -1353,17 +1489,19 @@ class MCPTools:
             quality_guidance.append("质量可接受，注意补充分析深度")
         else:
             quality_guidance.append("质量需要改进，重点加强论证和证据支撑")
-        
+
         # Add step-specific guidance
         if session.step_number > 5:
             quality_guidance.append("流程较为完整，确保各步骤结果的有机整合")
-        
+
         # Add improvement area guidance
         improvement_areas = quality_metrics.get("improvement_areas", [])
         if improvement_areas and improvement_areas[0] != "所有步骤质量良好":
-            quality_guidance.append(f"特别关注以下改进领域: {', '.join(improvement_areas[:2])}")
-        
+            quality_guidance.append(
+                f"特别关注以下改进领域: {', '.join(improvement_areas[:2])}"
+            )
+
         if quality_guidance:
             return f"{base_instruction}。{' '.join(quality_guidance)}"
-        
+
         return base_instruction
