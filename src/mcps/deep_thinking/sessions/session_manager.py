@@ -34,62 +34,45 @@ class SessionManager:
         self._active_sessions = {}  # In-memory cache for active sessions
         logger.info(f"SessionManager initialized with database: {db_path}")
     
-    def create_session(self, topic: str, complexity: str = "moderate", 
-                      flow_type: str = "comprehensive_analysis",
-                      user_id: Optional[str] = None) -> str:
+    def create_session(self, session_state: SessionState) -> str:
         """
-        Create a new thinking session
+        Create a new thinking session from SessionState
         
         Args:
-            topic: The main topic or question to analyze
-            complexity: Complexity level (simple, moderate, complex)
-            flow_type: Type of thinking flow to use
-            user_id: Optional user identifier
+            session_state: SessionState object with session details
             
         Returns:
             Session ID
         """
-        session_id = str(uuid.uuid4())
-        
         # Create session configuration
         configuration = {
-            "complexity": complexity,
-            "flow_type": flow_type,
-            "created_by": user_id,
+            "complexity": session_state.context.get("complexity", "moderate"),
+            "flow_type": session_state.flow_type,
             "settings": {
-                "quality_threshold": 0.8 if complexity == "complex" else 0.7,
-                "max_steps": 20 if complexity == "complex" else 15,
+                "quality_threshold": 0.8 if session_state.context.get("complexity") == "complex" else 0.7,
+                "max_steps": 20 if session_state.context.get("complexity") == "complex" else 15,
                 "enable_bias_detection": True,
-                "enable_innovation_thinking": complexity in ["moderate", "complex"]
+                "enable_innovation_thinking": session_state.context.get("complexity") in ["moderate", "complex"]
             }
         }
         
         # Store in database
         success = self.db.create_session(
-            session_id=session_id,
-            topic=topic,
-            session_type=flow_type,
-            user_id=user_id,
+            session_id=session_state.session_id,
+            topic=session_state.topic,
+            session_type=session_state.flow_type,
+            user_id=None,  # Can be added later if needed
             configuration=configuration
         )
         
         if not success:
-            raise SessionStateError(f"Failed to create session for topic: {topic}")
+            raise SessionStateError(f"Failed to create session for topic: {session_state}")
         
-        # Create in-memory session state
-        session_state = SessionState(
-            session_id=session_id,
-            topic=topic,
-            current_step="initialize",
-            step_number=0,
-            flow_type=flow_type,
-            status="active"
-        )
+        # Store in memory cache
+        self._active_sessions[session_state.session_id] = session_state
         
-        self._active_sessions[session_id] = session_state
-        
-        logger.info(f"Created session {session_id} for topic: {topic[:50]}...")
-        return session_id
+        logger.info(f"Created session {session_state.session_id} for topic: {session_state.topic[:50]}...")
+        return session_state.session_id
     
     def get_session(self, session_id: str) -> SessionState:
         """
@@ -117,15 +100,15 @@ class SessionManager:
         session_state = SessionState(
             session_id=session_data['id'],
             topic=session_data['topic'],
-            current_step=session_data['current_step'],
-            step_number=session_data['step_number'],
-            flow_type=session_data['flow_type'],
-            status=session_data['status'],
+            current_step=session_data.get('current_step', 'initialize'),
+            step_number=session_data.get('step_number', 0),
+            flow_type=session_data.get('flow_type', session_data.get('session_type', 'comprehensive_analysis')),
+            status=session_data.get('status', 'active'),
             step_results=session_data.get('context', {}).get('step_results', {}),
             context=session_data.get('context', {}),
             quality_scores=session_data.get('quality_metrics', {}),
-            created_at=datetime.fromisoformat(session_data['created_at']),
-            updated_at=datetime.fromisoformat(session_data['updated_at'])
+            created_at=datetime.fromisoformat(session_data['created_at']) if session_data.get('created_at') else datetime.now(),
+            updated_at=datetime.fromisoformat(session_data['updated_at']) if session_data.get('updated_at') else datetime.now()
         )
         
         # Cache if active
@@ -199,7 +182,8 @@ class SessionManager:
                        result_content: str, result_type: str = "output",
                        metadata: Optional[Dict[str, Any]] = None,
                        quality_indicators: Optional[Dict[str, Any]] = None,
-                       citations: Optional[List[Dict[str, Any]]] = None) -> bool:
+                       citations: Optional[List[Dict[str, Any]]] = None,
+                       quality_score: Optional[float] = None) -> bool:
         """
         Add detailed result to a step
         
@@ -216,7 +200,7 @@ class SessionManager:
             True if successful
         """
         try:
-            # Get the step ID
+            # Get the step ID, create step if it doesn't exist
             steps = self.db.get_session_steps(session_id)
             step_id = None
             for step in steps:
@@ -225,8 +209,31 @@ class SessionManager:
                     break
             
             if step_id is None:
-                logger.warning(f"Step {step_name} not found for session {session_id}")
-                return False
+                # Create the step if it doesn't exist
+                session = self.get_session(session_id)
+                step_id = self.db.add_session_step(
+                    session_id=session_id,
+                    step_name=step_name,
+                    step_number=session.step_number + 1,
+                    step_type=self._determine_step_type(step_name),
+                    quality_score=quality_score
+                )
+                if step_id is None:
+                    logger.warning(f"Failed to create step {step_name} for session {session_id}")
+                    return False
+            
+            # Update session state with result
+            session = self.get_session(session_id)
+            session.step_results[step_name] = {
+                "result": result_content,
+                "quality_score": quality_score,
+                "timestamp": datetime.now()
+            }
+            if quality_score is not None:
+                session.quality_scores[step_name] = quality_score
+            
+            # Update cache
+            self._active_sessions[session_id] = session
             
             # Add result to database
             result_id = self.db.add_step_result(
@@ -499,3 +506,71 @@ class SessionManager:
             "critical_evaluation": 10
         }
         return flow_steps.get(flow_type, 10)
+    
+    def get_step_summary(self, session_id: str) -> str:
+        """Get a summary of completed steps"""
+        try:
+            session = self.get_session(session_id)
+            if not session:
+                return "会话未找到"
+                
+            steps = self.db.get_session_steps(session_id)
+            
+            summary_parts = []
+            for step in steps:
+                step_name = step.get('step_name', 'unknown_step')
+                quality = session.quality_scores.get(step_name, 'N/A')
+                summary_parts.append(f"- {step_name}: 完成 (质量: {quality})")
+            
+            return "\n".join(summary_parts) if summary_parts else "暂无完成的步骤"
+            
+        except Exception as e:
+            logger.error(f"Error getting step summary for {session_id}: {e}")
+            return "获取步骤摘要时出错"
+    
+    def get_full_trace(self, session_id: str) -> Dict[str, Any]:
+        """Get full thinking trace for the session"""
+        try:
+            session = self.get_session(session_id)
+            if not session:
+                return {"error": "Session not found"}
+                
+            steps = self.db.get_session_steps(session_id)
+            results = self.db.get_step_results(session_id)
+            
+            trace = {
+                "session_id": session_id,
+                "topic": session.topic,
+                "flow_type": session.flow_type,
+                "status": session.status,
+                "steps": [],
+                "quality_summary": session.quality_scores,
+                "total_duration": (session.updated_at - session.created_at).total_seconds() if session.updated_at and session.created_at else 0
+            }
+            
+            # Organize results by step
+            step_results = {}
+            for result in results:
+                step_id = result.get('step_id')
+                if step_id and step_id not in step_results:
+                    step_results[step_id] = []
+                if step_id:
+                    step_results[step_id].append(result)
+            
+            # Build detailed step trace
+            for step in steps:
+                step_trace = {
+                    "step_name": step.get('step_name', 'unknown'),
+                    "step_type": step.get('step_type', 'general'),
+                    "quality_score": step.get('quality_score'),
+                    "execution_time_ms": step.get('execution_time_ms'),
+                    "results": step_results.get(step.get('id'), []),
+                    "timestamp": step.get('created_at')
+                }
+                trace["steps"].append(step_trace)
+            
+            return trace
+            
+        except Exception as e:
+            logger.error(f"Error getting full trace for {session_id}: {e}")
+            return {"error": str(e)}

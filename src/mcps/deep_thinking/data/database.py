@@ -62,122 +62,145 @@ class ThinkingDatabase:
     """
     
     def __init__(self, db_path: str = "thinking_sessions.db", encryption_key: Optional[bytes] = None):
-        self.db_path = Path(db_path)
+        self.db_path = Path(db_path) if db_path != ':memory:' else db_path
         self.encryption = DatabaseEncryption(encryption_key) if encryption_key else None
+        self._memory_conn = None  # For persistent in-memory connections
         self._init_database()
     
     def _init_database(self):
         """Initialize database with required tables"""
-        with self.get_connection() as conn:
-            # Enable WAL mode for better concurrent performance
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute("PRAGMA cache_size=10000")
-            conn.execute("PRAGMA temp_store=memory")
-            
-            # Create tables
-            self._create_tables(conn)
+        try:
+            with self.get_connection() as conn:
+                # Enable WAL mode for better concurrent performance (skip for memory db)
+                if self.db_path != ':memory:':
+                    conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                conn.execute("PRAGMA cache_size=10000")
+                conn.execute("PRAGMA temp_store=memory")
+                
+                # Create tables
+                self._create_tables(conn)
+                logger.info("Database initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize database: {e}")
+            raise
     
     def _create_tables(self, conn: sqlite3.Connection):
         """Create database tables"""
         
-        # Main thinking sessions table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS thinking_sessions (
-                id TEXT PRIMARY KEY,
-                user_id TEXT,
-                topic TEXT NOT NULL,
-                topic_encrypted TEXT,
-                session_type TEXT DEFAULT 'comprehensive_analysis',
-                current_step TEXT DEFAULT '',
-                step_number INTEGER DEFAULT 0,
-                status TEXT DEFAULT 'active',
-                flow_type TEXT DEFAULT 'comprehensive_analysis',
-                configuration TEXT,  -- JSON
-                context TEXT,        -- JSON (encrypted if encryption enabled)
-                quality_metrics TEXT, -- JSON
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                completed_at TIMESTAMP NULL
-            )
-        """)
-        
-        # Session steps tracking
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS session_steps (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                step_name TEXT NOT NULL,
-                step_number INTEGER NOT NULL,
-                step_type TEXT NOT NULL,
-                template_used TEXT,
-                input_data TEXT,      -- JSON (encrypted)
-                output_data TEXT,     -- JSON (encrypted)
-                quality_score REAL,
-                execution_time_ms INTEGER,
-                status TEXT DEFAULT 'completed',
-                error_message TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (session_id) REFERENCES thinking_sessions (id) ON DELETE CASCADE
-            )
-        """)
-        
-        # Step results storage
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS step_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                step_id INTEGER NOT NULL,
-                result_type TEXT NOT NULL,  -- 'input', 'output', 'analysis', 'evidence'
-                content TEXT NOT NULL,      -- Encrypted content
-                metadata TEXT,              -- JSON metadata
-                quality_indicators TEXT,    -- JSON quality metrics
-                citations TEXT,             -- JSON citation data
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (session_id) REFERENCES thinking_sessions (id) ON DELETE CASCADE,
-                FOREIGN KEY (step_id) REFERENCES session_steps (id) ON DELETE CASCADE
-            )
-        """)
-        
-        # Evidence sources tracking
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS evidence_sources (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                step_id INTEGER,
-                url TEXT,
-                title TEXT,
-                summary TEXT,           -- Encrypted
-                credibility_score REAL DEFAULT 0.0,
-                source_type TEXT,
-                publication_date TEXT,
-                key_claims TEXT,        -- JSON (encrypted)
-                citation_count INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (session_id) REFERENCES thinking_sessions (id) ON DELETE CASCADE,
-                FOREIGN KEY (step_id) REFERENCES session_steps (id) ON DELETE SET NULL
-            )
-        """)
-        
-        # Create indexes for performance
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_status ON thinking_sessions (status)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_created ON thinking_sessions (created_at)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_session ON session_steps (session_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_number ON session_steps (session_id, step_number)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_results_session ON step_results (session_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_session ON evidence_sources (session_id)")
-        
-        conn.commit()
+        try:
+            # Main thinking sessions table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS thinking_sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT,
+                    topic TEXT NOT NULL,
+                    topic_encrypted TEXT,
+                    session_type TEXT DEFAULT 'comprehensive_analysis',
+                    current_step TEXT DEFAULT '',
+                    step_number INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'active',
+                    flow_type TEXT DEFAULT 'comprehensive_analysis',
+                    configuration TEXT,  -- JSON
+                    context TEXT,        -- JSON (encrypted if encryption enabled)
+                    quality_metrics TEXT, -- JSON
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TIMESTAMP NULL
+                )
+            """)
+            logger.info("Created thinking_sessions table")
+            
+            # Session steps tracking
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS session_steps (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    step_name TEXT NOT NULL,
+                    step_number INTEGER NOT NULL,
+                    step_type TEXT NOT NULL,
+                    template_used TEXT,
+                    input_data TEXT,      -- JSON (encrypted)
+                    output_data TEXT,     -- JSON (encrypted)
+                    quality_score REAL,
+                    execution_time_ms INTEGER,
+                    status TEXT DEFAULT 'completed',
+                    error_message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (session_id) REFERENCES thinking_sessions (id) ON DELETE CASCADE
+                )
+            """)
+            
+            # Step results storage
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS step_results (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    step_id INTEGER NOT NULL,
+                    result_type TEXT NOT NULL,  -- 'input', 'output', 'analysis', 'evidence'
+                    content TEXT NOT NULL,      -- Encrypted content
+                    metadata TEXT,              -- JSON metadata
+                    quality_indicators TEXT,    -- JSON quality metrics
+                    citations TEXT,             -- JSON citation data
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (session_id) REFERENCES thinking_sessions (id) ON DELETE CASCADE,
+                    FOREIGN KEY (step_id) REFERENCES session_steps (id) ON DELETE CASCADE
+                )
+            """)
+            
+            # Evidence sources tracking
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS evidence_sources (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    step_id INTEGER,
+                    url TEXT,
+                    title TEXT,
+                    summary TEXT,           -- Encrypted
+                    credibility_score REAL DEFAULT 0.0,
+                    source_type TEXT,
+                    publication_date TEXT,
+                    key_claims TEXT,        -- JSON (encrypted)
+                    citation_count INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (session_id) REFERENCES thinking_sessions (id) ON DELETE CASCADE,
+                    FOREIGN KEY (step_id) REFERENCES session_steps (id) ON DELETE SET NULL
+                )
+            """)
+            
+            # Create indexes for performance
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_status ON thinking_sessions (status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_created ON thinking_sessions (created_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_session ON session_steps (session_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_number ON session_steps (session_id, step_number)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_results_session ON step_results (session_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_session ON evidence_sources (session_id)")
+            
+            conn.commit()
+            logger.info("All database tables created successfully")
+            
+        except Exception as e:
+            logger.error(f"Error creating database tables: {e}")
+            raise
     
     @contextmanager
     def get_connection(self):
         """Get database connection with proper cleanup"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row  # Enable dict-like access
-        try:
-            yield conn
-        finally:
-            conn.close()
+        if self.db_path == ':memory:':
+            # For in-memory databases, maintain a persistent connection
+            if self._memory_conn is None:
+                self._memory_conn = sqlite3.connect(':memory:')
+                self._memory_conn.row_factory = sqlite3.Row
+            yield self._memory_conn
+        else:
+            # For file databases, create new connections
+            db_path = self.db_path if isinstance(self.db_path, str) else str(self.db_path)
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row  # Enable dict-like access
+            try:
+                yield conn
+            finally:
+                conn.close()
     
     def _encrypt_if_enabled(self, data: str) -> str:
         """Encrypt data if encryption is enabled"""

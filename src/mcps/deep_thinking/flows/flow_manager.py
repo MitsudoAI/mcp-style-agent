@@ -245,7 +245,7 @@ class FlowManager:
                     'dependencies': []
                 },
                 {
-                    'step_id': 'evidence',
+                    'step_id': 'collect_evidence',
                     'step_name': 'Evidence Collection',
                     'step_type': 'research',
                     'template_name': 'evidence_collection',
@@ -256,7 +256,7 @@ class FlowManager:
                     'step_name': 'Critical Evaluation',
                     'step_type': 'assessment',
                     'template_name': 'critical_evaluation',
-                    'dependencies': ['evidence']
+                    'dependencies': ['collect_evidence']
                 },
                 {
                     'step_id': 'reflect',
@@ -333,7 +333,7 @@ class FlowManager:
         
         flow.start()
     
-    def get_next_step(self, flow_id: str) -> Optional[FlowStep]:
+    def get_next_step_in_flow(self, flow_id: str) -> Optional[FlowStep]:
         """Get the next step to execute in a flow"""
         flow = self.get_flow(flow_id)
         if not flow:
@@ -412,3 +412,60 @@ class FlowManager:
             'status_distribution': status_counts,
             'available_flow_types': list(self.flow_definitions.keys())
         }
+    
+    def list_flows(self) -> List[str]:
+        """List available flow types"""
+        return list(self.flow_definitions.keys())
+    
+    def get_flow_info(self, flow_type: str) -> Optional[Dict[str, Any]]:
+        """Get information about a flow type"""
+        if flow_type not in self.flow_definitions:
+            return None
+        
+        flow_def = self.flow_definitions[flow_type]
+        return {
+            'name': flow_def['name'],
+            'description': flow_def['description'],
+            'total_steps': len(flow_def['steps']),
+            'steps': flow_def['steps']
+        }
+    
+    def get_next_step(self, flow_type: str, current_step: str, step_result: str) -> Optional[Dict[str, Any]]:
+        """Get next step information for a flow type"""
+        if flow_type not in self.flow_definitions:
+            return None
+        
+        flow_def = self.flow_definitions[flow_type]
+        steps = flow_def['steps']
+        
+        # Find current step index - handle different step name formats
+        current_index = -1
+        for i, step in enumerate(steps):
+            step_id = step['step_id']
+            step_name = step['step_name']
+            
+            # Check various formats: step_id, step_name, or partial matches
+            if (step_id == current_step or 
+                step_name == current_step or 
+                current_step == 'decompose_problem' and step_id == 'decompose' or
+                current_step == 'collect_evidence' and step_id == 'collect_evidence' or
+                current_step == 'critical_evaluation' and step_id == 'evaluate'):
+                current_index = i
+                break
+        
+        # Return next step if available
+        if current_index >= 0 and current_index + 1 < len(steps):
+            next_step = steps[current_index + 1]
+            return {
+                'step_name': next_step['step_id'],
+                'template_name': next_step['template_name'],
+                'instructions': f"Execute {next_step['step_name']} step"
+            }
+        
+        return None
+    
+    def get_total_steps(self, flow_type: str) -> int:
+        """Get total number of steps in a flow type"""
+        if flow_type not in self.flow_definitions:
+            return 0
+        return len(self.flow_definitions[flow_type]['steps'])
