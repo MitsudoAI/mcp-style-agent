@@ -30,33 +30,421 @@ class TemplateManager:
     def _create_builtin_templates(self):
         """Create built-in templates"""
         templates = {
-            "decomposition": """# 深度思考：问题分解
+            "decomposition_high": """# 深度思考：系统性问题分解（高复杂度）
 
-你是一位专业的问题分析专家。请将以下复杂问题分解为可管理的子问题：
+你是一位专业的系统思维专家，擅长将复杂问题分解为可管理的组成部分。请对以下问题进行系统性分解：
+
+**主要问题**: {topic}
+**复杂度**: 高
+**关注重点**: {focus}
+**领域背景**: {domain_context}
+
+## 复杂度自适应分解策略：
+
+### 【高复杂度分解策略】
+请使用以下多维度分解方法：
+1. **系统层次分解**：将问题分解为宏观、中观、微观三个层次
+2. **时间维度分解**：分析短期、中期、长期的不同阶段
+3. **利益相关者分解**：识别并分析所有关键利益相关者的视角
+4. **因果链分解**：分析根本原因、中间因素和最终结果
+5. **跨领域分解**：从技术、经济、社会、政治、环境等多个领域分析
+6. **风险维度分解**：识别潜在风险、不确定性和边界条件
+7. **矛盾分析**：识别问题中的核心矛盾和冲突点
+
+请生成5-7个深度子问题，确保全面覆盖问题空间，并建立详细的关系图。
+
+## 分解要求：
+1. 每个子问题必须具体、明确、可独立分析
+2. 子问题之间应尽量减少重叠，保持相对独立性
+3. 子问题集合必须完整覆盖原问题的核心方面
+4. 明确标注子问题之间的依赖关系和优先级
+5. 为每个子问题提供精确的搜索关键词和预期分析角度
+
+## JSON输出格式规范：
+```json
+{
+  "main_question": "原始主问题的准确描述",
+  "complexity_level": "high",
+  "decomposition_strategy": "系统层次分解",
+  "sub_questions": [
+    {
+      "id": "SQ1",
+      "question": "子问题1的具体描述",
+      "priority": "high/medium/low",
+      "search_keywords": ["关键词1", "关键词2", "关键词3"],
+      "expected_perspectives": ["视角1", "视角2", "视角3"],
+      "analysis_dimensions": ["维度1", "维度2"]
+    },
+    {
+      "id": "SQ2",
+      "question": "子问题2的具体描述",
+      "priority": "high/medium/low",
+      "search_keywords": ["关键词1", "关键词2", "关键词3"],
+      "expected_perspectives": ["视角1", "视角2", "视角3"],
+      "analysis_dimensions": ["维度1", "维度2"]
+    }
+    // 更多子问题...
+  ],
+  "relationships": [
+    {
+      "from": "SQ1",
+      "to": "SQ2",
+      "type": "depends_on/influences/contradicts/supports",
+      "description": "关系的具体描述"
+    }
+    // 更多关系...
+  ],
+  "coverage_analysis": {
+    "key_aspects_covered": ["方面1", "方面2", "方面3"],
+    "potential_blind_spots": ["盲点1", "盲点2"]
+  }
+}
+```
+
+## 输出验证检查清单：
+1. JSON格式是否完全符合规范？
+   - 确保所有引号、括号、逗号正确
+   - 移除所有注释行（如 "// 更多子问题..."）
+   - 检查所有字段名和值格式是否正确
+
+2. 子问题数量是否符合复杂度要求？
+   - 高复杂度：5-7个子问题
+
+3. 每个子问题是否都有完整的属性？
+   - id：唯一标识符（如SQ1, SQ2等）
+   - question：完整清晰的问题描述
+   - priority：优先级（high/medium/low）
+   - search_keywords：至少3个搜索关键词
+   - expected_perspectives：至少2个分析视角
+   - analysis_dimensions：至少2个分析维度
+
+4. 关系描述是否清晰准确？
+   - 每个子问题至少与一个其他子问题建立关系
+   - 关系类型正确（depends_on/influences/contradicts/supports）
+   - 关系描述具体明确
+
+5. 是否覆盖了问题的所有关键方面？
+   - coverage_analysis部分完整填写
+   - 至少识别3个关键覆盖方面
+   - 至少识别2个潜在盲点
+
+请开始系统性问题分解：""",
+
+            "decomposition_medium": """# 深度思考：系统性问题分解（中等复杂度）
+
+你是一位专业的系统思维专家，擅长将复杂问题分解为可管理的组成部分。请对以下问题进行系统性分解：
+
+**主要问题**: {topic}
+**复杂度**: 中等
+**关注重点**: {focus}
+**领域背景**: {domain_context}
+
+## 复杂度自适应分解策略：
+
+### 【中等复杂度分解策略】
+请使用以下多角度分解方法：
+1. **MECE分解法**：相互独立、完全穷尽的分类方式
+2. **时间序列分解**：按照问题发展的时间顺序分解
+3. **利益相关者分析**：从主要相关方的角度分解问题
+4. **因果分析**：识别主要原因和结果链
+5. **领域分类**：按照不同专业领域分类分析
+
+请生成4-6个核心子问题，确保覆盖问题的主要方面。
+
+## 分解要求：
+1. 每个子问题必须具体、明确、可独立分析
+2. 子问题之间应尽量减少重叠，保持相对独立性
+3. 子问题集合必须完整覆盖原问题的核心方面
+4. 明确标注子问题之间的依赖关系和优先级
+5. 为每个子问题提供精确的搜索关键词和预期分析角度
+
+## JSON输出格式规范：
+```json
+{
+  "main_question": "原始主问题的准确描述",
+  "complexity_level": "medium",
+  "decomposition_strategy": "MECE分解法",
+  "sub_questions": [
+    {
+      "id": "SQ1",
+      "question": "子问题1的具体描述",
+      "priority": "high/medium/low",
+      "search_keywords": ["关键词1", "关键词2", "关键词3"],
+      "expected_perspectives": ["视角1", "视角2", "视角3"],
+      "analysis_dimensions": ["维度1", "维度2"]
+    },
+    {
+      "id": "SQ2",
+      "question": "子问题2的具体描述",
+      "priority": "high/medium/low",
+      "search_keywords": ["关键词1", "关键词2", "关键词3"],
+      "expected_perspectives": ["视角1", "视角2", "视角3"],
+      "analysis_dimensions": ["维度1", "维度2"]
+    }
+    // 更多子问题...
+  ],
+  "relationships": [
+    {
+      "from": "SQ1",
+      "to": "SQ2",
+      "type": "depends_on/influences/contradicts/supports",
+      "description": "关系的具体描述"
+    }
+    // 更多关系...
+  ],
+  "coverage_analysis": {
+    "key_aspects_covered": ["方面1", "方面2", "方面3"],
+    "potential_blind_spots": ["盲点1", "盲点2"]
+  }
+}
+```
+
+## 输出验证检查清单：
+1. JSON格式是否完全符合规范？
+   - 确保所有引号、括号、逗号正确
+   - 移除所有注释行（如 "// 更多子问题..."）
+   - 检查所有字段名和值格式是否正确
+
+2. 子问题数量是否符合复杂度要求？
+   - 中等复杂度：4-6个子问题
+
+3. 每个子问题是否都有完整的属性？
+   - id：唯一标识符（如SQ1, SQ2等）
+   - question：完整清晰的问题描述
+   - priority：优先级（high/medium/low）
+   - search_keywords：至少3个搜索关键词
+   - expected_perspectives：至少2个分析视角
+   - analysis_dimensions：至少2个分析维度
+
+4. 关系描述是否清晰准确？
+   - 每个子问题至少与一个其他子问题建立关系
+   - 关系类型正确（depends_on/influences/contradicts/supports）
+   - 关系描述具体明确
+
+5. 是否覆盖了问题的所有关键方面？
+   - coverage_analysis部分完整填写
+   - 至少识别3个关键覆盖方面
+   - 至少识别2个潜在盲点
+
+请开始系统性问题分解：""",
+
+            "decomposition_low": """# 深度思考：系统性问题分解（基础复杂度）
+
+你是一位专业的系统思维专家，擅长将复杂问题分解为可管理的组成部分。请对以下问题进行系统性分解：
+
+**主要问题**: {topic}
+**复杂度**: 低
+**关注重点**: {focus}
+**领域背景**: {domain_context}
+
+## 复杂度自适应分解策略：
+
+### 【基础分解策略】
+请使用以下基本分解方法：
+1. **5W1H分析法**：What(是什么)、Why(为什么)、Who(谁)、When(何时)、Where(何地)、How(如何)
+2. **问题分类法**：将问题按照类型或领域进行分类
+3. **优先级分解**：按照重要性和紧急性分解问题
+
+请生成3-5个关键子问题，确保清晰简洁地覆盖核心问题。
+
+## 分解要求：
+1. 每个子问题必须具体、明确、可独立分析
+2. 子问题之间应尽量减少重叠，保持相对独立性
+3. 子问题集合必须完整覆盖原问题的核心方面
+4. 明确标注子问题之间的依赖关系和优先级
+5. 为每个子问题提供精确的搜索关键词和预期分析角度
+
+## JSON输出格式规范：
+```json
+{
+  "main_question": "原始主问题的准确描述",
+  "complexity_level": "low",
+  "decomposition_strategy": "5W1H分析法",
+  "sub_questions": [
+    {
+      "id": "SQ1",
+      "question": "子问题1的具体描述",
+      "priority": "high/medium/low",
+      "search_keywords": ["关键词1", "关键词2", "关键词3"],
+      "expected_perspectives": ["视角1", "视角2", "视角3"],
+      "analysis_dimensions": ["维度1", "维度2"]
+    },
+    {
+      "id": "SQ2",
+      "question": "子问题2的具体描述",
+      "priority": "high/medium/low",
+      "search_keywords": ["关键词1", "关键词2", "关键词3"],
+      "expected_perspectives": ["视角1", "视角2", "视角3"],
+      "analysis_dimensions": ["维度1", "维度2"]
+    }
+    // 更多子问题...
+  ],
+  "relationships": [
+    {
+      "from": "SQ1",
+      "to": "SQ2",
+      "type": "depends_on/influences/contradicts/supports",
+      "description": "关系的具体描述"
+    }
+    // 更多关系...
+  ],
+  "coverage_analysis": {
+    "key_aspects_covered": ["方面1", "方面2", "方面3"],
+    "potential_blind_spots": ["盲点1", "盲点2"]
+  }
+}
+```
+
+## 输出验证检查清单：
+1. JSON格式是否完全符合规范？
+   - 确保所有引号、括号、逗号正确
+   - 移除所有注释行（如 "// 更多子问题..."）
+   - 检查所有字段名和值格式是否正确
+
+2. 子问题数量是否符合复杂度要求？
+   - 基础复杂度：3-5个子问题
+
+3. 每个子问题是否都有完整的属性？
+   - id：唯一标识符（如SQ1, SQ2等）
+   - question：完整清晰的问题描述
+   - priority：优先级（high/medium/low）
+   - search_keywords：至少3个搜索关键词
+   - expected_perspectives：至少2个分析视角
+   - analysis_dimensions：至少2个分析维度
+
+4. 关系描述是否清晰准确？
+   - 每个子问题至少与一个其他子问题建立关系
+   - 关系类型正确（depends_on/influences/contradicts/supports）
+   - 关系描述具体明确
+
+5. 是否覆盖了问题的所有关键方面？
+   - coverage_analysis部分完整填写
+   - 至少识别3个关键覆盖方面
+   - 至少识别2个潜在盲点
+
+请开始系统性问题分解：""",
+
+            "decomposition": """# 深度思考：系统性问题分解
+
+你是一位专业的系统思维专家，擅长将复杂问题分解为可管理的组成部分。请对以下问题进行系统性分解：
 
 **主要问题**: {topic}
 **复杂度**: {complexity}
 **关注重点**: {focus}
 **领域背景**: {domain_context}
 
+## 复杂度自适应分解策略：
+
+请根据问题复杂度选择适当的分解策略：
+
+### 高复杂度问题分解策略
+适用于复杂、多维度、系统性问题，请使用以下多维度分解方法：
+1. **系统层次分解**：将问题分解为宏观、中观、微观三个层次
+2. **时间维度分解**：分析短期、中期、长期的不同阶段
+3. **利益相关者分解**：识别并分析所有关键利益相关者的视角
+4. **因果链分解**：分析根本原因、中间因素和最终结果
+5. **跨领域分解**：从技术、经济、社会、政治、环境等多个领域分析
+6. **风险维度分解**：识别潜在风险、不确定性和边界条件
+7. **矛盾分析**：识别问题中的核心矛盾和冲突点
+
+对于高复杂度问题，请生成5-7个深度子问题，确保全面覆盖问题空间，并建立详细的关系图。
+
+### 中等复杂度问题分解策略
+适用于中等复杂度问题，请使用以下多角度分解方法：
+1. **MECE分解法**：相互独立、完全穷尽的分类方式
+2. **时间序列分解**：按照问题发展的时间顺序分解
+3. **利益相关者分析**：从主要相关方的角度分解问题
+4. **因果分析**：识别主要原因和结果链
+5. **领域分类**：按照不同专业领域分类分析
+
+对于中等复杂度问题，请生成4-6个核心子问题，确保覆盖问题的主要方面。
+
+### 基础复杂度问题分解策略
+适用于相对简单、明确的问题，请使用以下基本分解方法：
+1. **5W1H分析法**：What(是什么)、Why(为什么)、Who(谁)、When(何时)、Where(何地)、How(如何)
+2. **问题分类法**：将问题按照类型或领域进行分类
+3. **优先级分解**：按照重要性和紧急性分解问题
+
+对于基础复杂度问题，请生成3-5个关键子问题，确保清晰简洁地覆盖核心问题。
+
 ## 分解要求：
-1. 将主问题分解为3-7个核心子问题
-2. 每个子问题应该相对独立且可深入分析
-3. 确保覆盖问题的不同角度和层面
-4. 识别子问题之间的依赖关系
+1. 每个子问题必须具体、明确、可独立分析
+2. 子问题之间应尽量减少重叠，保持相对独立性
+3. 子问题集合必须完整覆盖原问题的核心方面
+4. 明确标注子问题之间的依赖关系和优先级
+5. 为每个子问题提供精确的搜索关键词和预期分析角度
 
-## 输出格式：
-请以JSON格式输出，包含：
-- main_question: 主要问题
-- sub_questions: 子问题列表，每个包含：
-  - id: 唯一标识
-  - question: 子问题描述
-  - priority: high/medium/low
-  - search_keywords: 搜索关键词列表
-  - expected_perspectives: 预期分析角度
-- relationships: 子问题间的依赖关系
+## JSON输出格式规范：
+```json
+{
+  "main_question": "原始主问题的准确描述",
+  "complexity_level": "high/medium/low",
+  "decomposition_strategy": "使用的分解策略名称",
+  "sub_questions": [
+    {
+      "id": "SQ1",
+      "question": "子问题1的具体描述",
+      "priority": "high/medium/low",
+      "search_keywords": ["关键词1", "关键词2", "关键词3"],
+      "expected_perspectives": ["视角1", "视角2", "视角3"],
+      "analysis_dimensions": ["维度1", "维度2"]
+    },
+    {
+      "id": "SQ2",
+      "question": "子问题2的具体描述",
+      "priority": "high/medium/low",
+      "search_keywords": ["关键词1", "关键词2", "关键词3"],
+      "expected_perspectives": ["视角1", "视角2", "视角3"],
+      "analysis_dimensions": ["维度1", "维度2"]
+    }
+    // 更多子问题...
+  ],
+  "relationships": [
+    {
+      "from": "SQ1",
+      "to": "SQ2",
+      "type": "depends_on/influences/contradicts/supports",
+      "description": "关系的具体描述"
+    }
+    // 更多关系...
+  ],
+  "coverage_analysis": {
+    "key_aspects_covered": ["方面1", "方面2", "方面3"],
+    "potential_blind_spots": ["盲点1", "盲点2"]
+  }
+}
+```
 
-开始分解：""",
+## 输出验证检查清单：
+1. JSON格式是否完全符合规范？
+   - 确保所有引号、括号、逗号正确
+   - 移除所有注释行（如 "// 更多子问题..."）
+   - 检查所有字段名和值格式是否正确
+
+2. 子问题数量是否符合复杂度要求？
+   - 高复杂度：5-7个子问题
+   - 中等复杂度：4-6个子问题
+   - 基础复杂度：3-5个子问题
+
+3. 每个子问题是否都有完整的属性？
+   - id：唯一标识符（如SQ1, SQ2等）
+   - question：完整清晰的问题描述
+   - priority：优先级（high/medium/low）
+   - search_keywords：至少3个搜索关键词
+   - expected_perspectives：至少2个分析视角
+   - analysis_dimensions：至少2个分析维度
+
+4. 关系描述是否清晰准确？
+   - 每个子问题至少与一个其他子问题建立关系
+   - 关系类型正确（depends_on/influences/contradicts/supports）
+   - 关系描述具体明确
+
+5. 是否覆盖了问题的所有关键方面？
+   - coverage_analysis部分完整填写
+   - 至少识别3个关键覆盖方面
+   - 至少识别2个潜在盲点
+
+请开始系统性问题分解：""",
             "evidence_collection": """# 深度思考：证据收集
 
 你现在需要为以下子问题收集全面、可靠的证据：
@@ -768,37 +1156,51 @@ class TemplateManager:
         self, template_name: str, parameters: Optional[Dict[str, Any]] = None
     ) -> str:
         """Get template with parameter substitution"""
-        if template_name not in self.cache:
-            raise ConfigurationError(f"Template not found: {template_name}")
+        parameters = parameters or {}
+        
+        # Special handling for decomposition template based on complexity
+        if template_name == "decomposition" and "complexity" in parameters:
+            complexity = str(parameters.get("complexity", "")).lower()
+            if complexity in ["high", "高"]:
+                actual_template = "decomposition_high"
+            elif complexity in ["medium", "中", "中等"]:
+                actual_template = "decomposition_medium"
+            elif complexity in ["low", "低"]:
+                actual_template = "decomposition_low"
+            else:
+                actual_template = "decomposition"
+        else:
+            actual_template = template_name
 
-        template_content = self.cache[template_name]
+        if actual_template not in self.cache:
+            raise ConfigurationError(f"Template not found: {actual_template}")
+
+        template_content = self.cache[actual_template]
 
         # Update usage stats
         with self.lock:
-            if template_name in self.metadata:
-                self.metadata[template_name]["usage_count"] += 1
-                self.metadata[template_name]["last_used"] = datetime.now()
+            if actual_template in self.metadata:
+                self.metadata[actual_template]["usage_count"] += 1
+                self.metadata[actual_template]["last_used"] = datetime.now()
 
         # Parameter substitution
-        if parameters:
-            safe_params = {}
-            for key, value in parameters.items():
-                safe_params[key] = str(value) if value is not None else ""
+        safe_params = {}
+        for key, value in parameters.items():
+            safe_params[key] = str(value) if value is not None else ""
 
-            # Find template variables
-            template_vars = re.findall(r"\{(\w+)\}", template_content)
+        # Find template variables
+        template_vars = re.findall(r"\{(\w+)\}", template_content)
 
-            # Provide defaults for missing variables
-            for var in template_vars:
-                if var not in safe_params:
-                    safe_params[var] = f"[{var}]"
+        # Provide defaults for missing variables
+        for var in template_vars:
+            if var not in safe_params:
+                safe_params[var] = f"[{var}]"
 
-            try:
-                return template_content.format(**safe_params)
-            except Exception:
-                return template_content
-
-        return template_content
+        try:
+            return template_content.format(**safe_params)
+        except Exception as e:
+            print(f"Error formatting template: {e}")
+            return template_content
 
     def list_templates(self) -> List[str]:
         """List all available templates"""
