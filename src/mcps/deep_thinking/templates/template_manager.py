@@ -167,39 +167,82 @@ class TemplateManager:
 4. 结束当前会话
 
 请告诉我你希望如何处理：""",
-            "comprehensive_summary": """# 深度思考总结报告
+            "comprehensive_summary": """# 深度思考综合报告
 
-## 思考主题
-{topic}
+## 📋 会话信息
+- **思考主题**: {topic}
+- **流程类型**: {flow_type}
+- **完成时间**: {completion_timestamp}
+- **会话时长**: {session_duration}
+- **总步骤数**: {total_steps}
+- **整体评估**: {overall_assessment}
 
-## 思考历程
+## 🔄 思考历程回顾
 {step_summary}
 
-## 请生成综合报告：
+## 📊 质量分析报告
+{quality_metrics}
 
-### 1. 核心发现
-- 主要结论：
-- 关键洞察：
-- 重要发现：
+## 🎯 请生成详细的综合报告：
 
-### 2. 证据支撑
-- 最有力的证据：
-- 证据质量评估：
-- 不确定性分析：
+### 1. 🔍 核心发现与洞察
+请基于整个思考过程，总结出最重要的发现：
+- **主要结论**: 基于证据和分析得出的核心结论
+- **关键洞察**: 思考过程中产生的重要洞察
+- **意外发现**: 超出预期的重要发现
+- **深层理解**: 对问题本质的深层理解
 
-### 3. 多角度分析
-- 支持观点：
-- 反对观点：
-- 中立分析：
+### 2. 📚 证据与支撑分析
+请评估和总结证据基础：
+- **最有力的证据**: 支撑结论的最强证据
+- **证据质量评估**: 整体证据的可信度和完整性
+- **证据缺口分析**: 识别证据不足的领域
+- **不确定性分析**: 结论中存在的不确定性
 
-### 4. 质量评估
-- 思维过程评价：{quality_metrics}
-- 改进建议：
+### 3. 🔄 多角度综合分析
+请整合不同视角的分析结果：
+- **支持观点汇总**: 支持主要结论的观点和论据
+- **反对观点汇总**: 质疑或反对的观点和论据
+- **中立分析汇总**: 客观平衡的分析观点
+- **观点整合**: 如何整合不同观点形成综合判断
 
-### 5. 最终洞察
+### 4. 🎨 创新思维成果
+如果包含创新思维环节，请总结：
+- **创新想法**: 产生的新颖想法或解决方案
+- **可行性评估**: 创新想法的实施可行性
+- **潜在影响**: 创新方案可能带来的影响
+- **实施建议**: 具体的实施路径和建议
+
+### 5. 🤔 反思与元认知
+请进行深度反思：
+- **思维过程评价**: 对整个思考过程的评价
+- **方法论反思**: 使用的思维方法的有效性
+- **认知盲点识别**: 发现的思维盲点和局限
+- **学习收获**: 从这次思考中获得的学习
+
+### 6. 📈 质量改进建议
+基于质量分析，提供改进建议：
+- **改进优先级**: {improvement_areas}
+- **最佳实践**: 本次思考中的最佳实践（最佳步骤: {best_step}）
+- **避免陷阱**: 需要避免的思维陷阱
+- **持续改进**: 未来思考的改进方向
+
+### 7. 🎯 行动建议与后续思考
+请提供具体的行动指导：
+- **立即行动**: 基于结论可以立即采取的行动
+- **中期规划**: 需要进一步规划的中期行动
+- **持续关注**: 需要持续关注和思考的问题
+- **知识缺口**: 需要进一步学习和研究的领域
+
+### 8. 💡 最终洞察与总结
 {final_insights}
 
-请生成详细的综合报告：""",
+## 📝 思维轨迹记录
+{thinking_trace}
+
+---
+
+**报告生成说明**: 请基于以上框架生成详细、结构化的综合报告，确保每个部分都有具体内容，避免空泛的表述。重点突出基于证据的结论和具有实用价值的洞察。""",
             "reflection": """# 深度思考：苏格拉底式反思
 
 现在让我们对整个思考过程进行深度反思：
@@ -713,333 +756,6 @@ class TemplateManager:
 {improvement_suggestions}
 
 请开始高级评估："""
-        }
-        
-        # Store templates in cache
-        for name, content in templates.items():
-            self.cache[name] = content
-            self.metadata[name] = {
-                'builtin': True,
-                'usage_count': 0,
-                'last_used': None
-            }
-    
-    def get_template(self, template_name: str, parameters: Optional[Dict[str, Any]] = None) -> str:
-        """Get template with parameter substitution"""
-        if template_name not in self.cache:
-            raise ConfigurationError(f"Template not found: {template_name}")
-        
-        template_content = self.cache[template_name]
-        
-        # Update usage stats
-        with self.lock:
-            if template_name in self.metadata:
-                self.metadata[template_name]['usage_count'] += 1
-                self.metadata[template_name]['last_used'] = datetime.now()
-        
-        # Parameter substitution
-        if parameters:
-            safe_params = {}
-            for key, value in parameters.items():
-                safe_params[key] = str(value) if value is not None else ""
-            
-            # Find template variables
-            template_vars = re.findall(r'\{(\w+)\}', template_content)
-            
-            # Provide defaults for missing variables
-            for var in template_vars:
-                if var not in safe_params:
-                    safe_params[var] = f"[{var}]"
-            
-            try:
-                return template_content.format(**safe_params)
-            except Exception:
-                return template_content
-        
-        return template_content
-    
-    def list_templates(self) -> List[str]:
-        """List all available templates"""
-        return list(self.cache.keys())
-    
-    def add_template(self, template_name: str, template_content: str) -> None:
-        """Add a new template"""
-        self.cache[template_name] = template_content
-        self.metadata[template_name] = {
-            'builtin': False,
-            'usage_count': 0,
-            'last_used': None
-        }
-    
-    def get_usage_statistics(self) -> Dict[str, Any]:
-        """Get usage statistics"""
-        total_usage = sum(meta.get('usage_count', 0) for meta in self.metadata.values())
-        
-        return {
-            'total_templates': len(self.cache),
-            'total_usage': total_usage
-        }           
- # Analysis templates for different step types
-            "analyze_decomposition": """# 步骤质量分析：问题分解
-
-请分析以下问题分解结果的质量：
-
-**原始问题**: {original_topic}
-**分解结果**: {step_result}
-**分析类型**: {analysis_type}
-
-## 分解质量评估标准：
-
-### 1. 完整性 (Completeness) - 权重: 25%
-- 是否覆盖了问题的主要方面？
-- 子问题数量是否合适（3-7个）？
-- 是否遗漏了重要角度？
-- 评分：1-10分，理由：
-
-### 2. 独立性 (Independence) - 权重: 20%
-- 各子问题是否相对独立？
-- 是否存在过度重叠？
-- 能否独立分析每个子问题？
-- 评分：1-10分，理由：
-
-### 3. 可操作性 (Actionability) - 权重: 20%
-- 子问题是否具体可分析？
-- 搜索关键词是否合适？
-- 是否提供了分析方向？
-- 评分：1-10分，理由：
-
-### 4. 逻辑结构 (Logical Structure) - 权重: 15%
-- 分解逻辑是否清晰？
-- 优先级设置是否合理？
-- 依赖关系是否明确？
-- 评分：1-10分，理由：
-
-### 5. 格式规范 (Format Compliance) - 权重: 20%
-- 是否符合JSON格式要求？
-- 必需字段是否完整？
-- 数据结构是否正确？
-- 评分：1-10分，理由：
-
-## 综合评估：
-- **加权总分**: ___/10分 (计算公式: (完整性×0.25 + 独立性×0.2 + 可操作性×0.2 + 逻辑结构×0.15 + 格式规范×0.2))
-- **质量等级**: {quality_level}
-- **是否通过质量门控**: {quality_gate_passed}
-
-## 改进建议：
-{improvement_suggestions}
-
-## 下一步建议：
-{next_step_recommendation}
-
-请开始详细分析：""",
-            "analyze_evidence": """# 步骤质量分析：证据收集
-
-请分析以下证据收集结果的质量：
-
-**子问题**: {sub_question}
-**证据收集结果**: {step_result}
-**分析类型**: {analysis_type}
-
-## 证据质量评估标准：
-
-### 1. 来源多样性 (Source Diversity) - 权重: 25%
-- 是否包含多种类型的来源？
-- 学术、媒体、官方来源是否平衡？
-- 是否避免了单一来源依赖？
-- 评分：1-10分，理由：
-
-### 2. 可信度评估 (Credibility Assessment) - 权重: 25%
-- 来源的权威性如何？
-- 是否提供了可信度评分？
-- 是否识别了潜在偏见？
-- 评分：1-10分，理由：
-
-### 3. 相关性匹配 (Relevance Matching) - 权重: 20%
-- 证据是否直接回答子问题？
-- 关键词匹配度如何？
-- 是否偏离了核心问题？
-- 评分：1-10分，理由：
-
-### 4. 信息完整性 (Information Completeness) - 权重: 15%
-- 关键事实是否提取完整？
-- 是否包含必要的引用信息？
-- 摘要质量如何？
-- 评分：1-10分，理由：
-
-### 5. 冲突识别 (Conflict Identification) - 权重: 15%
-- 是否识别了相互矛盾的信息？
-- 对争议点的处理是否得当？
-- 是否标记了不确定性？
-- 评分：1-10分，理由：
-
-## 综合评估：
-- **加权总分**: ___/10分
-- **质量等级**: {quality_level}
-- **是否通过质量门控**: {quality_gate_passed}
-
-## 改进建议：
-{improvement_suggestions}
-
-## 下一步建议：
-{next_step_recommendation}
-
-请开始详细分析：""",
-            "analyze_debate": """# 步骤质量分析：多角度辩论
-
-请分析以下多角度辩论结果的质量：
-
-**辩论主题**: {debate_topic}
-**辩论结果**: {step_result}
-**分析类型**: {analysis_type}
-
-## 辩论质量评估标准：
-
-### 1. 角度多样性 (Perspective Diversity) - 权重: 25%
-- 是否涵盖了不同立场？
-- 角色设定是否清晰？
-- 观点是否有实质性差异？
-- 评分：1-10分，理由：
-
-### 2. 论证质量 (Argument Quality) - 权重: 25%
-- 论据是否有力？
-- 逻辑推理是否严密？
-- 是否基于证据？
-- 评分：1-10分，理由：
-
-### 3. 互动深度 (Interaction Depth) - 权重: 20%
-- 是否有效质疑对方观点？
-- 回应是否切中要害？
-- 辩论是否深入？
-- 评分：1-10分，理由：
-
-### 4. 平衡性 (Balance) - 权重: 15%
-- 各方观点是否得到充分表达？
-- 辩论时间是否合理分配？
-- 是否避免了一边倒？
-- 评分：1-10分，理由：
-
-### 5. 建设性 (Constructiveness) - 权重: 15%
-- 是否产生了新的洞察？
-- 争议点是否得到澄清？
-- 是否推进了问题理解？
-- 评分：1-10分，理由：
-
-## 综合评估：
-- **加权总分**: ___/10分
-- **质量等级**: {quality_level}
-- **是否通过质量门控**: {quality_gate_passed}
-
-## 改进建议：
-{improvement_suggestions}
-
-## 下一步建议：
-{next_step_recommendation}
-
-请开始详细分析：""",
-            "analyze_evaluation": """# 步骤质量分析：批判性评估
-
-请分析以下批判性评估结果的质量：
-
-**评估内容**: {evaluated_content}
-**评估结果**: {step_result}
-**分析类型**: {analysis_type}
-
-## 评估质量分析标准：
-
-### 1. 标准应用 (Standards Application) - 权重: 30%
-- 是否正确应用了Paul-Elder九大标准？
-- 每个标准的评分是否合理？
-- 评估理由是否充分？
-- 评分：1-10分，理由：
-
-### 2. 评分准确性 (Scoring Accuracy) - 权重: 25%
-- 评分是否与分析内容匹配？
-- 是否避免了过于宽松或严格？
-- 综合得分计算是否正确？
-- 评分：1-10分，理由：
-
-### 3. 改进建议 (Improvement Suggestions) - 权重: 20%
-- 改进建议是否具体可行？
-- 是否针对了主要问题？
-- 建议的优先级是否合理？
-- 评分：1-10分，理由：
-
-### 4. 客观性 (Objectivity) - 权重: 15%
-- 评估是否客观公正？
-- 是否避免了主观偏见？
-- 证据引用是否充分？
-- 评分：1-10分，理由：
-
-### 5. 决策支持 (Decision Support) - 权重: 10%
-- 是否明确了下一步行动？
-- 质量门控判断是否合理？
-- 是否提供了清晰的指导？
-- 评分：1-10分，理由：
-
-## 综合评估：
-- **加权总分**: ___/10分
-- **质量等级**: {quality_level}
-- **是否通过质量门控**: {quality_gate_passed}
-
-## 改进建议：
-{improvement_suggestions}
-
-## 下一步建议：
-{next_step_recommendation}
-
-请开始详细分析：""",
-            "analyze_reflection": """# 步骤质量分析：反思过程
-
-请分析以下反思结果的质量：
-
-**反思主题**: {reflection_topic}
-**反思结果**: {step_result}
-**分析类型**: {analysis_type}
-
-## 反思质量评估标准：
-
-### 1. 深度反思 (Reflection Depth) - 权重: 30%
-- 是否深入思考了思维过程？
-- 元认知意识是否充分？
-- 自我评估是否诚实？
-- 评分：1-10分，理由：
-
-### 2. 洞察质量 (Insight Quality) - 权重: 25%
-- 是否产生了有价值的洞察？
-- 发现的问题是否重要？
-- 学习收获是否具体？
-- 评分：1-10分，理由：
-
-### 3. 改进方向 (Improvement Direction) - 权重: 20%
-- 改进建议是否可行？
-- 是否识别了关键改进点？
-- 行动计划是否具体？
-- 评分：1-10分，理由：
-
-### 4. 思维监控 (Metacognitive Monitoring) - 权重: 15%
-- 是否识别了思维模式？
-- 对思维盲点的认识如何？
-- 自我监控能力如何？
-- 评分：1-10分，理由：
-
-### 5. 持续学习 (Continuous Learning) - 权重: 10%
-- 是否体现了学习态度？
-- 对未来思考的规划如何？
-- 知识迁移能力如何？
-- 评分：1-10分，理由：
-
-## 综合评估：
-- **加权总分**: ___/10分
-- **质量等级**: {quality_level}
-- **是否通过质量门控**: {quality_gate_passed}
-
-## 改进建议：
-{improvement_suggestions}
-
-## 下一步建议：
-{next_step_recommendation}
-
-请开始详细分析："""
         }
         
         # Store templates in cache

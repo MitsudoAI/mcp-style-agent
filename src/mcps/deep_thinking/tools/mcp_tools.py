@@ -8,7 +8,7 @@ These tools follow the zero-cost principle:
 """
 
 import uuid
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 from ..models.mcp_models import (
@@ -306,7 +306,11 @@ class MCPTools:
         """
         Complete the thinking process and generate final report
         
-        Returns comprehensive summary prompt template
+        Enhanced implementation with:
+        - Comprehensive session state update and result aggregation
+        - Quality metrics calculation and analysis
+        - Final report template with detailed insights
+        - Session completion with full trace preservation
         """
         try:
             # Get session state
@@ -314,38 +318,83 @@ class MCPTools:
             if not session:
                 return self._handle_session_not_found(input_data.session_id)
             
-            # Mark session as completed
-            self.session_manager.complete_session(input_data.session_id)
+            # Calculate comprehensive quality metrics
+            quality_metrics = self._calculate_comprehensive_quality_metrics(session)
             
-            # Get summary template
-            template_params = {
-                "topic": session.topic,
-                "step_summary": self.session_manager.get_step_summary(input_data.session_id),
-                "thinking_trace": self.session_manager.get_full_trace(input_data.session_id),
-                "quality_metrics": session.quality_scores,
-                "final_insights": input_data.final_insights or ""
+            # Generate session summary with detailed analysis
+            session_summary = self._generate_detailed_session_summary(session)
+            
+            # Get full thinking trace with enhanced metadata
+            thinking_trace = self.session_manager.get_full_trace(input_data.session_id)
+            
+            # Prepare final results for session completion
+            final_results = {
+                "completion_timestamp": datetime.now().isoformat(),
+                "total_steps_completed": session.step_number,
+                "quality_metrics": quality_metrics,
+                "session_summary": session_summary,
+                "final_insights": input_data.final_insights or "",
+                "thinking_trace_id": thinking_trace.get("session_id"),
+                "flow_type": session.flow_type,
+                "session_duration_minutes": self._calculate_session_duration_minutes(session)
             }
             
+            # Mark session as completed with comprehensive final results
+            completion_success = self.session_manager.complete_session(
+                input_data.session_id, 
+                final_results=final_results
+            )
+            
+            if not completion_success:
+                # Handle completion failure but continue with report generation
+                final_results["completion_warning"] = "Session completion partially failed but report can still be generated"
+            
+            # Build enhanced template parameters for comprehensive summary
+            template_params = self._build_comprehensive_summary_params(
+                session, 
+                quality_metrics, 
+                session_summary, 
+                thinking_trace,
+                input_data.final_insights
+            )
+            
+            # Get comprehensive summary template
             prompt_template = self.template_manager.get_template(
                 "comprehensive_summary",
                 template_params
             )
+            
+            # Generate detailed instructions for final report
+            instructions = self._generate_completion_instructions(quality_metrics, session)
             
             return MCPToolOutput(
                 tool_name=MCPToolName.COMPLETE_THINKING,
                 session_id=input_data.session_id,
                 step="generate_final_report",
                 prompt_template=prompt_template,
-                instructions="请生成详细的综合报告，包含所有关键发现和洞察",
+                instructions=instructions,
                 context={
                     "session_completed": True,
-                    "total_steps": session.step_number
+                    "total_steps": session.step_number,
+                    "quality_metrics": quality_metrics,
+                    "session_summary": session_summary,
+                    "thinking_trace_available": True,
+                    "final_results": final_results,
+                    "completion_success": completion_success
                 },
-                next_action="思维流程已完成，可以生成最终报告",
+                next_action="生成最终综合报告，思维流程已完成",
                 metadata={
                     "session_status": "completed",
+                    "completion_timestamp": final_results["completion_timestamp"],
+                    "quality_summary": {
+                        "average_quality": quality_metrics.get("average_quality", 0),
+                        "quality_trend": quality_metrics.get("quality_trend", "stable"),
+                        "total_steps": session.step_number,
+                        "high_quality_steps": quality_metrics.get("high_quality_steps", 0)
+                    },
                     "thinking_trace_available": True,
-                    "quality_metrics": session.quality_scores
+                    "report_generation_ready": True,
+                    "session_duration_minutes": final_results["session_duration_minutes"]
                 }
             )
             
@@ -1041,3 +1090,280 @@ class MCPTools:
                 "original_tool": tool_name
             }
         )
+    
+    # Enhanced helper methods for complete_thinking tool
+    
+    def _calculate_comprehensive_quality_metrics(self, session: SessionState) -> Dict[str, Any]:
+        """
+        Calculate comprehensive quality metrics for the session
+        
+        Returns detailed quality analysis including:
+        - Average quality score
+        - Quality trend analysis
+        - Step-by-step quality breakdown
+        - Quality distribution
+        - Improvement recommendations
+        """
+        quality_scores = session.quality_scores
+        
+        if not quality_scores:
+            return {
+                "average_quality": 0.0,
+                "quality_trend": "no_data",
+                "total_steps": session.step_number,
+                "high_quality_steps": 0,
+                "quality_distribution": {},
+                "improvement_areas": ["No quality data available"],
+                "overall_assessment": "insufficient_data"
+            }
+        
+        # Calculate basic metrics
+        scores = list(quality_scores.values())
+        average_quality = sum(scores) / len(scores)
+        high_quality_steps = sum(1 for score in scores if score >= 8.0)
+        
+        # Quality trend analysis
+        quality_trend = self._analyze_quality_trend(scores)
+        
+        # Quality distribution
+        quality_distribution = {
+            "excellent": sum(1 for score in scores if score >= 9.0),
+            "good": sum(1 for score in scores if 7.0 <= score < 9.0),
+            "acceptable": sum(1 for score in scores if 5.0 <= score < 7.0),
+            "needs_improvement": sum(1 for score in scores if score < 5.0)
+        }
+        
+        # Identify improvement areas
+        improvement_areas = self._identify_improvement_areas(quality_scores)
+        
+        # Overall assessment
+        overall_assessment = self._determine_overall_assessment(average_quality, quality_distribution)
+        
+        return {
+            "average_quality": round(average_quality, 2),
+            "quality_trend": quality_trend,
+            "total_steps": session.step_number,
+            "high_quality_steps": high_quality_steps,
+            "quality_distribution": quality_distribution,
+            "step_quality_breakdown": quality_scores,
+            "improvement_areas": improvement_areas,
+            "overall_assessment": overall_assessment,
+            "quality_consistency": self._calculate_quality_consistency(scores),
+            "best_performing_step": max(quality_scores.items(), key=lambda x: x[1]) if quality_scores else None,
+            "lowest_performing_step": min(quality_scores.items(), key=lambda x: x[1]) if quality_scores else None
+        }
+    
+    def _analyze_quality_trend(self, scores: List[float]) -> str:
+        """Analyze the trend in quality scores"""
+        if len(scores) < 2:
+            return "insufficient_data"
+        
+        # Simple trend analysis
+        first_half = scores[:len(scores)//2]
+        second_half = scores[len(scores)//2:]
+        
+        first_avg = sum(first_half) / len(first_half)
+        second_avg = sum(second_half) / len(second_half)
+        
+        diff = second_avg - first_avg
+        
+        if diff > 0.5:
+            return "improving"
+        elif diff < -0.5:
+            return "declining"
+        else:
+            return "stable"
+    
+    def _identify_improvement_areas(self, quality_scores: Dict[str, float]) -> List[str]:
+        """Identify areas that need improvement based on quality scores"""
+        improvement_areas = []
+        
+        for step_name, score in quality_scores.items():
+            if score < 6.0:
+                improvement_areas.append(f"{step_name} (得分: {score})")
+        
+        if not improvement_areas:
+            improvement_areas.append("所有步骤质量良好")
+        
+        return improvement_areas
+    
+    def _determine_overall_assessment(self, average_quality: float, quality_distribution: Dict[str, int]) -> str:
+        """Determine overall quality assessment"""
+        if average_quality >= 8.5:
+            return "excellent"
+        elif average_quality >= 7.0:
+            return "good"
+        elif average_quality >= 5.0:
+            return "acceptable"
+        else:
+            return "needs_improvement"
+    
+    def _calculate_quality_consistency(self, scores: List[float]) -> float:
+        """Calculate quality consistency (lower variance = higher consistency)"""
+        if len(scores) < 2:
+            return 1.0
+        
+        mean = sum(scores) / len(scores)
+        variance = sum((score - mean) ** 2 for score in scores) / len(scores)
+        
+        # Convert to consistency score (0-1, higher is more consistent)
+        consistency = max(0, 1 - (variance / 10))  # Normalize variance
+        return round(consistency, 3)
+    
+    def _generate_detailed_session_summary(self, session: SessionState) -> Dict[str, Any]:
+        """Generate detailed session summary with step analysis"""
+        
+        # Get step details from database
+        try:
+            steps = self.session_manager.db.get_session_steps(session.session_id)
+            results = self.session_manager.db.get_step_results(session.session_id)
+        except Exception:
+            steps = []
+            results = []
+        
+        # Organize results by step
+        step_results_map = {}
+        for result in results:
+            step_id = result.get('step_id')
+            if step_id not in step_results_map:
+                step_results_map[step_id] = []
+            step_results_map[step_id].append(result)
+        
+        # Build detailed step summary
+        detailed_steps = []
+        for step in steps:
+            step_summary = {
+                "step_name": step.get('step_name', 'unknown'),
+                "step_type": step.get('step_type', 'general'),
+                "quality_score": step.get('quality_score'),
+                "execution_time_ms": step.get('execution_time_ms'),
+                "results_count": len(step_results_map.get(step.get('id'), [])),
+                "timestamp": step.get('created_at')
+            }
+            detailed_steps.append(step_summary)
+        
+        return {
+            "session_id": session.session_id,
+            "topic": session.topic,
+            "flow_type": session.flow_type,
+            "total_steps": len(detailed_steps),
+            "session_duration": self._calculate_session_duration_minutes(session),
+            "detailed_steps": detailed_steps,
+            "context_summary": session.context,
+            "completion_status": "completed"
+        }
+    
+    def _calculate_session_duration_minutes(self, session: SessionState) -> float:
+        """Calculate session duration in minutes"""
+        if session.created_at and session.updated_at:
+            duration = (session.updated_at - session.created_at).total_seconds() / 60
+            return round(duration, 2)
+        return 0.0
+    
+    def _build_comprehensive_summary_params(self, session: SessionState, quality_metrics: Dict[str, Any], 
+                                          session_summary: Dict[str, Any], thinking_trace: Dict[str, Any],
+                                          final_insights: Optional[str]) -> Dict[str, Any]:
+        """Build comprehensive parameters for the summary template"""
+        
+        # Format quality metrics for display
+        quality_display = self._format_quality_metrics_for_display(quality_metrics)
+        
+        # Format step summary for display
+        step_summary_display = self._format_step_summary_for_display(session_summary)
+        
+        # Format thinking trace for display
+        trace_display = self._format_thinking_trace_for_display(thinking_trace)
+        
+        return {
+            "topic": session.topic,
+            "flow_type": session.flow_type,
+            "session_duration": f"{session_summary['session_duration']} 分钟",
+            "total_steps": session_summary["total_steps"],
+            "step_summary": step_summary_display,
+            "thinking_trace": trace_display,
+            "quality_metrics": quality_display,
+            "final_insights": final_insights or "无额外洞察",
+            "completion_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "overall_assessment": quality_metrics.get("overall_assessment", "unknown"),
+            "average_quality": quality_metrics.get("average_quality", 0),
+            "improvement_areas": "\n".join(quality_metrics.get("improvement_areas", [])),
+            "best_step": quality_metrics.get("best_performing_step", ["无", 0])[0] if quality_metrics.get("best_performing_step") else "无",
+            "session_context": session.context
+        }
+    
+    def _format_quality_metrics_for_display(self, quality_metrics: Dict[str, Any]) -> str:
+        """Format quality metrics for template display"""
+        if not quality_metrics:
+            return "无质量数据"
+        
+        lines = [
+            f"平均质量得分: {quality_metrics.get('average_quality', 0)}/10",
+            f"质量趋势: {quality_metrics.get('quality_trend', 'unknown')}",
+            f"高质量步骤数: {quality_metrics.get('high_quality_steps', 0)}",
+            f"总体评估: {quality_metrics.get('overall_assessment', 'unknown')}",
+            f"质量一致性: {quality_metrics.get('quality_consistency', 0)}"
+        ]
+        
+        if quality_metrics.get('best_performing_step'):
+            best_step, best_score = quality_metrics['best_performing_step']
+            lines.append(f"最佳步骤: {best_step} ({best_score}/10)")
+        
+        return "\n".join(lines)
+    
+    def _format_step_summary_for_display(self, session_summary: Dict[str, Any]) -> str:
+        """Format step summary for template display"""
+        if not session_summary.get('detailed_steps'):
+            return "无步骤数据"
+        
+        lines = []
+        for step in session_summary['detailed_steps']:
+            step_name = step.get('step_name', 'unknown')
+            quality = step.get('quality_score', 'N/A')
+            lines.append(f"- {step_name}: 完成 (质量: {quality})")
+        
+        return "\n".join(lines)
+    
+    def _format_thinking_trace_for_display(self, thinking_trace: Dict[str, Any]) -> str:
+        """Format thinking trace for template display"""
+        if not thinking_trace or thinking_trace.get('error'):
+            return "思维轨迹不可用"
+        
+        lines = [
+            f"会话ID: {thinking_trace.get('session_id', 'unknown')}",
+            f"流程类型: {thinking_trace.get('flow_type', 'unknown')}",
+            f"总时长: {thinking_trace.get('total_duration', 0)} 秒",
+            f"步骤数量: {len(thinking_trace.get('steps', []))}"
+        ]
+        
+        return "\n".join(lines)
+    
+    def _generate_completion_instructions(self, quality_metrics: Dict[str, Any], session: SessionState) -> str:
+        """Generate detailed instructions for final report generation"""
+        base_instruction = "请生成详细的综合报告，包含所有关键发现和洞察"
+        
+        # Add quality-specific guidance
+        quality_guidance = []
+        
+        overall_assessment = quality_metrics.get("overall_assessment", "unknown")
+        if overall_assessment == "excellent":
+            quality_guidance.append("质量优秀，重点突出核心洞察和创新观点")
+        elif overall_assessment == "good":
+            quality_guidance.append("质量良好，确保涵盖所有重要发现")
+        elif overall_assessment == "acceptable":
+            quality_guidance.append("质量可接受，注意补充分析深度")
+        else:
+            quality_guidance.append("质量需要改进，重点加强论证和证据支撑")
+        
+        # Add step-specific guidance
+        if session.step_number > 5:
+            quality_guidance.append("流程较为完整，确保各步骤结果的有机整合")
+        
+        # Add improvement area guidance
+        improvement_areas = quality_metrics.get("improvement_areas", [])
+        if improvement_areas and improvement_areas[0] != "所有步骤质量良好":
+            quality_guidance.append(f"特别关注以下改进领域: {', '.join(improvement_areas[:2])}")
+        
+        if quality_guidance:
+            return f"{base_instruction}。{' '.join(quality_guidance)}"
+        
+        return base_instruction
