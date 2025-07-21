@@ -1,0 +1,81 @@
+# Deep Thinking Engine - Debate Flow Configuration
+
+debate_analysis:
+  description: "Multi-perspective debate analysis flow"
+  version: "1.0"
+  estimated_duration: 20
+  
+  steps:
+    - agent: decomposer
+      name: "Problem Decomposition"
+      description: "Break down complex problem into debatable sub-questions"
+      config:
+        complexity_level: adaptive
+        max_sub_questions: 5
+        focus_on_controversies: true
+      
+    - agent: evidence_seeker
+      name: "Evidence Collection"
+      description: "Gather evidence for debate positions"
+      parallel: true
+      for_each: "decomposer.sub_questions"
+      config:
+        source_diversity: true
+        min_sources: 7
+        credibility_threshold: 0.7
+        perspective_balance: true
+      
+    - agent: debate_orchestrator
+      name: "Multi-perspective Debate"
+      description: "Organize debate between different viewpoints"
+      config:
+        positions: ["pro", "con", "neutral", "alternative"]
+        max_rounds: 4
+        sparse_communication: true
+        structured_format: true
+      
+    - agent: critic
+      name: "Argument Evaluation"
+      description: "Evaluate argument quality using formal logic standards"
+      config:
+        standards: formal_logic
+        fallacy_detection: true
+        argument_mapping: true
+      
+    - agent: bias_buster
+      name: "Bias Detection"
+      description: "Detect and flag cognitive biases in arguments"
+      config:
+        comprehensive_check: true
+        bias_types: all
+        quantitative_scoring: true
+      
+    - agent: synthesizer
+      name: "Argument Synthesis"
+      description: "Synthesize strongest arguments from all perspectives"
+      conditions:
+        critic.overall_score: ">=0.75"
+      config:
+        integration_method: "dialectic"
+        steel_manning: true
+      
+    - agent: reflector
+      name: "Metacognitive Reflection"
+      description: "Guide Socratic reflection on the debate process"
+      config:
+        reflection_depth: deep
+        socratic_questions: true
+        focus_areas: ["epistemic_humility", "intellectual_fairness"]
+
+  error_handling:
+    retry_strategy: exponential_backoff
+    fallback_agents: 
+      - simplified_critic
+      - basic_reflector
+    max_retries: 3
+    
+  global_config:
+    enable_caching: true
+    parallel_execution: true
+    quality_gates: true
+    debate_style: "academic"

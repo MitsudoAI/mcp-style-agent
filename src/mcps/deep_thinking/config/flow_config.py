@@ -4,11 +4,14 @@ Flow configuration management with YAML support
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Union
 
 from ..models.thinking_models import FlowStep, ThinkingFlow
 from .config_manager import ConfigManager
 from .exceptions import FlowConfigurationError
+from .yaml_flow_parser import YAMLFlowParser
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +25,7 @@ class FlowConfigManager:
         self.config_manager = config_manager
         self.flows: Dict[str, ThinkingFlow] = {}
         self._lock = asyncio.Lock()
+        self.yaml_parser = YAMLFlowParser()
 
         # Register for config reload notifications if config_manager is provided
         if self.config_manager:
@@ -37,8 +41,10 @@ class FlowConfigManager:
             logger.warning("No config manager available, skipping flow loading")
             return
 
+        # Load flows from config manager
         flows_config = self.config_manager.get_config("flows", {})
-
+        
+        # Parse flows from config
         for flow_name, flow_data in flows_config.items():
             if flow_name.startswith("_"):  # Skip metadata fields
                 continue
@@ -47,61 +53,47 @@ class FlowConfigManager:
                 await self._load_flow(flow_name, flow_data)
             except Exception as e:
                 logger.error(f"Failed to load flow '{flow_name}': {e}")
+        
+        # Load flows from YAML files in config directory
+        if self.config_manager and hasattr(self.config_manager, "config_dir"):
+            config_dir = Path(self.config_manager.config_dir)
+            flows_dir = config_dir / "flows"
+            
+            if flows_dir.exists() and flows_dir.is_dir():
+                for file_path in flows_dir.glob("*.yaml"):
+                    try:
+                        await self._load_flow_file(file_path)
+                    except Exception as e:
+                        logger.error(f"Failed to load flow file '{file_path}': {e}")
+
+    async def _load_flow_file(self, file_path: Path) -> None:
+        """Load flows from a YAML file"""
+        try:
+            parsed_flows = self.yaml_parser.parse_file(file_path)
+            
+            for flow_name, flow in parsed_flows.items():
+                self.flows[flow_name] = flow
+                logger.info(f"Loaded flow configuration from file: {flow_name}")
+                
+        except Exception as e:
+            logger.error(f"Failed to load flows from file {file_path}: {e}")
+            raise
 
     async def _load_flow(self, flow_name: str, flow_data: Dict[str, Any]) -> None:
         """Load a single flow configuration"""
         try:
-            # Validate required fields
-            if "steps" not in flow_data:
-                raise FlowConfigurationError(
-                    f"Flow '{flow_name}' missing required 'steps' field"
-                )
-
-            # Parse flow steps
-            steps = []
-            for i, step_data in enumerate(flow_data["steps"]):
-                step = self._parse_flow_step(f"{flow_name}_step_{i}", step_data)
-                steps.append(step)
-
-            # Create flow object
-            flow = ThinkingFlow(
-                name=flow_name,
-                description=flow_data.get("description"),
-                version=flow_data.get("version", "1.0"),
-                steps=steps,
-                error_handling=flow_data.get("error_handling"),
-                global_config=flow_data.get("global_config", {}),
-                prerequisites=flow_data.get("prerequisites", []),
-                expected_outputs=flow_data.get("expected_outputs", []),
-                estimated_duration=flow_data.get("estimated_duration"),
-            )
-
-            self.flows[flow_name] = flow
-            logger.info(f"Loaded flow configuration: {flow_name}")
+            # Use YAML parser to parse the flow
+            flow_dict = {flow_name: flow_data}
+            parsed_flows = self.yaml_parser.parse_yaml(flow_dict)
+            
+            if flow_name in parsed_flows:
+                self.flows[flow_name] = parsed_flows[flow_name]
+                logger.info(f"Loaded flow configuration: {flow_name}")
+            else:
+                raise FlowConfigurationError(f"Failed to parse flow '{flow_name}'")
 
         except Exception as e:
             raise FlowConfigurationError(f"Failed to parse flow '{flow_name}': {e}")
-
-    def _parse_flow_step(self, step_id: str, step_data: Dict[str, Any]) -> FlowStep:
-        """Parse a single flow step"""
-        if "agent" not in step_data:
-            raise FlowConfigurationError(
-                f"Step '{step_id}' missing required 'agent' field"
-            )
-
-        return FlowStep(
-            step_id=step_id,
-            agent_type=step_data["agent"],
-            step_name=step_data.get("name", step_id),
-            description=step_data.get("description"),
-            config=step_data.get("config", {}),
-            conditions=step_data.get("conditions"),
-            parallel=step_data.get("parallel", False),
-            for_each=step_data.get("for_each"),
-            repeat_until=step_data.get("repeat_until"),
-            timeout_seconds=step_data.get("timeout_seconds"),
-            retry_config=step_data.get("retry_config"),
-        )
 
     def _on_config_reload(self, config_name: str, config_data: Dict[str, Any]) -> None:
         """Handle configuration reload events"""
@@ -196,28 +188,11 @@ class FlowConfigManager:
 
     def _validate_step_dependencies(self, flow: ThinkingFlow) -> None:
         """Validate step dependencies and references"""
-        step_ids = {step.step_id for step in flow.steps}
-
-        for step in flow.steps:
-            # Validate for_each references
-            if step.for_each:
-                # Check if it references a valid previous step output
-                if "." in step.for_each:
-                    ref_step_id = step.for_each.split(".")[0]
-                    if ref_step_id not in step_ids:
-                        raise FlowConfigurationError(
-                            f"Step '{step.step_id}' references unknown step '{ref_step_id}' in for_each"
-                        )
-
-            # Validate condition references
-            if step.conditions:
-                for condition_key, condition_value in step.conditions.items():
-                    if isinstance(condition_value, str) and "." in condition_value:
-                        ref_step_id = condition_value.split(".")[0]
-                        if ref_step_id not in step_ids:
-                            logger.warning(
-                                f"Step '{step.step_id}' condition references unknown step '{ref_step_id}'"
-                            )
+        # Use the YAML parser's dependency validation
+        try:
+            self.yaml_parser._validate_dependencies(flow)
+        except FlowConfigurationError as e:
+            raise e
 
     async def create_flow_from_template(
         self, flow_name: str, template_name: str, parameters: Dict[str, Any]
@@ -281,6 +256,32 @@ class FlowConfigManager:
             return data
         else:
             return data
+            
+    def evaluate_condition(self, condition: str, context: Dict[str, Any]) -> bool:
+        """
+        Evaluate a condition expression using the YAML parser
+        
+        Args:
+            condition: Condition expression (e.g., "score >= 0.8")
+            context: Evaluation context with variables
+            
+        Returns:
+            bool: Result of condition evaluation
+        """
+        return self.yaml_parser.evaluate_condition(condition, context)
+        
+    def resolve_references(self, expression: str, context: Dict[str, Any]) -> Any:
+        """
+        Resolve variable references in an expression using the YAML parser
+        
+        Args:
+            expression: Expression with variable references
+            context: Context with variable values
+            
+        Returns:
+            Any: Resolved value
+        """
+        return self.yaml_parser.resolve_references(expression, context)
 
     async def save_flow(self, flow_name: str) -> None:
         """
