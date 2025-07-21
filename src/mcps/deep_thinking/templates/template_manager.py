@@ -32,6 +32,8 @@ class TemplateManager:
         templates = {
             # Add a placeholder for bias_detection
             "bias_detection": "# 认知偏见检测模板",
+            # Add a placeholder for innovation
+            "innovation": "# 创新思维模板",
             "decomposition_high": """# 深度思考：系统性问题分解（高复杂度）
 
 你是一位专业的系统思维专家，擅长将复杂问题分解为可管理的组成部分。请对以下问题进行系统性分解：
@@ -2182,6 +2184,40 @@ class TemplateManager:
                 content = parameters.get("content", "[content]")
                 context = parameters.get("context", "[context]")
                 complexity_param = str(parameters.get("complexity", "medium")).lower()
+                # Continue with the existing bias_detection template implementation
+                
+        elif template_name == "innovation":
+            # Import the innovation template module
+            try:
+                from src.mcps.deep_thinking.templates.innovation_template import get_innovation_template
+                return get_innovation_template(parameters)
+            except ImportError:
+                # Fallback to a simple template if the module is not available
+                concept = parameters.get("concept", "[concept]")
+                direction = parameters.get("direction", "[direction]")
+                constraints = parameters.get("constraints", "[constraints]")
+                method = parameters.get("method", "scamper")
+                complexity_param = str(parameters.get("complexity", "medium")).lower()
+                
+                # Create a simple innovation template as fallback
+                return f"""# 创新思维激发
+                
+**基础概念**: {concept}
+**创新方向**: {direction}
+**约束条件**: {constraints}
+**思考方法**: {method}
+
+请使用SCAMPER方法进行创新思考：
+
+1. S - Substitute (替代)
+2. C - Combine (结合)
+3. A - Adapt (适应)
+4. M - Modify (修改)
+5. P - Put to Other Uses (其他用途)
+6. E - Eliminate (消除)
+7. R - Reverse/Rearrange (逆转/重组)
+
+请开始创新思考："""
                 
                 # Convert complexity to Chinese
                 if complexity_param in ["high", "高"]:
