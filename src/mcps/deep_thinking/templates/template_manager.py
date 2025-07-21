@@ -30,6 +30,8 @@ class TemplateManager:
     def _create_builtin_templates(self):
         """Create built-in templates"""
         templates = {
+            # Add a placeholder for bias_detection
+            "bias_detection": "# 认知偏见检测模板",
             "decomposition_high": """# 深度思考：系统性问题分解（高复杂度）
 
 你是一位专业的系统思维专家，擅长将复杂问题分解为可管理的组成部分。请对以下问题进行系统性分解：
@@ -2170,6 +2172,105 @@ class TemplateManager:
                 actual_template = "decomposition_low"
             else:
                 actual_template = "decomposition"
+        elif template_name == "bias_detection":
+            # Import the bias detection template module
+            try:
+                from src.mcps.deep_thinking.templates.bias_detection_template import get_bias_detection_template
+                return get_bias_detection_template(parameters)
+            except ImportError:
+                # Fallback to a simple template if the module is not available
+                content = parameters.get("content", "[content]")
+                context = parameters.get("context", "[context]")
+                complexity_param = str(parameters.get("complexity", "medium")).lower()
+                
+                # Convert complexity to Chinese
+                if complexity_param in ["high", "高"]:
+                    complexity = "高"
+                    title = "深度思考：高级认知偏见检测"
+                elif complexity_param in ["low", "低"]:
+                    complexity = "低"
+                    title = "深度思考：基础认知偏见检测"
+                else:
+                    complexity = "中等"
+                    title = "深度思考：认知偏见检测"
+                
+                return f"""# {title}
+
+请仔细分析以下内容中可能存在的认知偏见：
+
+**分析内容**: {content}
+**分析背景**: {context}
+**分析复杂度**: {complexity}
+
+## 常见认知偏见检查清单
+
+### 🔍 确认偏误 (Confirmation Bias)
+- 是否只寻找支持既有观点的信息？
+- 是否忽略了相反的证据？
+- 检测结果：存在/不存在，证据：
+
+### ⚓ 锚定效应 (Anchoring Bias)
+- 是否过度依赖最初获得的信息？
+- 后续判断是否受到初始印象影响？
+- 检测结果：存在/不存在，证据：
+
+### 📊 可得性启发 (Availability Heuristic)
+- 是否因为某些例子容易想起就认为更常见？
+- 判断是否受到媒体报道频率影响？
+- 检测结果：存在/不存在，证据：
+
+### 🎯 代表性启发 (Representativeness Heuristic)
+- 是否基于刻板印象进行判断？
+- 是否忽略了基础概率？
+- 检测结果：存在/不存在，证据：
+
+### 💪 过度自信 (Overconfidence Bias)
+- 对自己的判断是否过于确信？
+- 是否低估了不确定性？
+- 检测结果：存在/不存在，证据：
+
+### 🔄 后见之明偏误 (Hindsight Bias)
+- 是否认为结果"早就可以预见"？
+- 是否重新解释了历史？
+- 检测结果：存在/不存在，证据：
+
+## 偏见缓解建议：
+请针对检测到的偏见提供具体的缓解策略：
+1. 
+2. 
+3. 
+
+## 总体评估：
+- 偏见风险等级：低/中/高
+- 主要偏见类型：
+- 改进优先级：
+
+## JSON输出格式
+```json
+{
+  "analysis_subject": "分析内容的简要描述",
+  "analysis_context": "分析背景的简要描述",
+  "bias_detection": {
+    "confirmation_bias": {
+      "detected": "true或false",
+      "evidence": "证据描述",
+      "mitigation": "缓解策略"
+    },
+    "anchoring_bias": {
+      "detected": "true或false",
+      "evidence": "证据描述",
+      "mitigation": "缓解策略"
+    }
+  },
+  "overall_assessment": {
+    "risk_level": "偏见风险等级",
+    "main_biases": ["主要偏见1", "主要偏见2"],
+    "mitigation_strategies": ["缓解策略1", "缓解策略2"]
+  }
+}
+```
+
+请开始详细分析："""
         elif template_name == "critical_evaluation":
             # Use a simple template for critical evaluation
             content = parameters.get("content", "[content]")
