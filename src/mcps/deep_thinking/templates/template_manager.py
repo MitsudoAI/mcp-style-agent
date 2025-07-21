@@ -34,6 +34,8 @@ class TemplateManager:
             "bias_detection": "# 认知偏见检测模板",
             # Add a placeholder for innovation
             "innovation": "# 创新思维模板",
+            # Add a placeholder for reflection
+            "reflection": "# 反思引导模板",
             "decomposition_high": """# 深度思考：系统性问题分解（高复杂度）
 
 你是一位专业的系统思维专家，擅长将复杂问题分解为可管理的组成部分。请对以下问题进行系统性分解：
@@ -2197,6 +2199,18 @@ class TemplateManager:
                 direction = parameters.get("direction", "[direction]")
                 constraints = parameters.get("constraints", "[constraints]")
                 method = parameters.get("method", "scamper")
+                complexity_param = str(parameters.get("complexity", "medium")).lower()
+                
+        elif template_name == "reflection":
+            # Import the reflection template module
+            try:
+                from src.mcps.deep_thinking.templates.reflection_template import get_reflection_template
+                return get_reflection_template(parameters)
+            except ImportError:
+                # Fallback to a simple template if the module is not available
+                topic = parameters.get("topic", "[topic]")
+                thinking_history = parameters.get("thinking_history", "[thinking_history]")
+                current_conclusions = parameters.get("current_conclusions", "[current_conclusions]")
                 complexity_param = str(parameters.get("complexity", "medium")).lower()
                 
                 # Create a simple innovation template as fallback
