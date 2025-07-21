@@ -6,9 +6,10 @@ Handles the orchestration and state management of thinking flows
 import logging
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from ..config.exceptions import ConfigurationError, FlowExecutionError
+from ..config.exceptions import ConfigurationError, FlowExecutionError, InvalidTransitionError
+from ..data.database import ThinkingDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -245,10 +246,16 @@ class FlowManager:
     Provides flow orchestration and state tracking
     """
 
-    def __init__(self):
+    def __init__(self, db: Optional[ThinkingDatabase] = None):
         self.active_flows: Dict[str, ThinkingFlow] = {}
         self.flow_definitions: Dict[str, Dict[str, Any]] = {}
+        self.db = db
         self._load_default_flows()
+        
+        # Initialize state machine if database is provided
+        from .flow_state_machine import FlowStateMachine
+        self.state_machine = FlowStateMachine(db)
+        
         logger.info("FlowManager initialized")
 
     def _load_default_flows(self):
@@ -355,7 +362,15 @@ class FlowManager:
         if not flow:
             raise FlowExecutionError(f"Flow not found: {flow_id}")
 
-        flow.start()
+        # Use state machine to transition flow to running state
+        from .flow_state_machine import FlowEvent
+        try:
+            new_state, success = self.state_machine.transition(flow, FlowEvent.START)
+            if not success:
+                logger.warning(f"Failed to start flow {flow_id}")
+        except InvalidTransitionError as e:
+            logger.error(f"Invalid transition when starting flow {flow_id}: {e}")
+            flow.start()  # Fallback to direct method if transition fails
 
     def get_next_step_in_flow(self, flow_id: str) -> Optional[FlowStep]:
         """Get the next step to execute in a flow"""
@@ -380,19 +395,36 @@ class FlowManager:
         if step_id not in flow.steps:
             raise FlowExecutionError(f"Step not found: {step_id}")
 
-        step = flow.steps[step_id]
-        step.complete(result, quality_score)
-
-        # Check if flow is complete
-        if all(
-            step.status in [FlowStepStatus.COMPLETED, FlowStepStatus.SKIPPED]
-            for step in flow.steps.values()
-        ):
-            flow.complete()
+        # Use state machine to handle step completion
+        from .flow_state_machine import FlowEvent
+        try:
+            metadata = {
+                "step_id": step_id,
+                "result": result,
+                "quality_score": quality_score
+            }
+            new_state, success = self.state_machine.transition(flow, FlowEvent.COMPLETE_STEP, metadata)
+            if not success:
+                logger.warning(f"Failed to complete step {step_id} in flow {flow_id}")
+                # Fallback to direct method
+                step = flow.steps[step_id]
+                step.complete(result, quality_score)
+        except InvalidTransitionError as e:
+            logger.error(f"Invalid transition when completing step {step_id} in flow {flow_id}: {e}")
+            # Fallback to direct method
+            step = flow.steps[step_id]
+            step.complete(result, quality_score)
+            
+            # Check if flow is complete
+            if all(
+                step.status in [FlowStepStatus.COMPLETED, FlowStepStatus.SKIPPED]
+                for step in flow.steps.values()
+            ):
+                flow.complete()
 
         logger.info(f"Completed step {step_id} in flow {flow_id}")
 
-    def fail_step(self, flow_id: str, step_id: str, error_message: str):
+    def fail_step(self, flow_id: str, step_id: str, error_message: str, critical: bool = False):
         """Mark a step as failed"""
         flow = self.get_flow(flow_id)
         if not flow:
@@ -401,29 +433,83 @@ class FlowManager:
         if step_id not in flow.steps:
             raise FlowExecutionError(f"Step not found: {step_id}")
 
-        step = flow.steps[step_id]
-        step.fail(error_message)
+        # Use state machine to handle step failure
+        from .flow_state_machine import FlowEvent
+        try:
+            metadata = {
+                "step_id": step_id,
+                "error_message": error_message,
+                "critical": critical
+            }
+            new_state, success = self.state_machine.transition(flow, FlowEvent.FAIL_STEP, metadata)
+            if not success:
+                logger.warning(f"Failed to mark step {step_id} as failed in flow {flow_id}")
+                # Fallback to direct method
+                step = flow.steps[step_id]
+                step.fail(error_message)
+        except InvalidTransitionError as e:
+            logger.error(f"Invalid transition when failing step {step_id} in flow {flow_id}: {e}")
+            # Fallback to direct method
+            step = flow.steps[step_id]
+            step.fail(error_message)
 
         logger.warning(f"Failed step {step_id} in flow {flow_id}: {error_message}")
 
     def pause_flow(self, flow_id: str):
         """Pause a flow"""
         flow = self.get_flow(flow_id)
-        if flow:
-            flow.pause()
+        if not flow:
+            logger.warning(f"Flow not found when trying to pause: {flow_id}")
+            return
+
+        # Use state machine to handle flow pause
+        from .flow_state_machine import FlowEvent
+        try:
+            new_state, success = self.state_machine.transition(flow, FlowEvent.PAUSE)
+            if not success:
+                logger.warning(f"Failed to pause flow {flow_id}")
+                # Fallback to direct method
+                flow.pause()
+        except InvalidTransitionError as e:
+            logger.error(f"Invalid transition when pausing flow {flow_id}: {e}")
+            # Fallback to direct method if in valid state
+            if flow.status == FlowStatus.RUNNING:
+                flow.pause()
 
     def resume_flow(self, flow_id: str):
         """Resume a flow"""
         flow = self.get_flow(flow_id)
-        if flow:
-            flow.resume()
+        if not flow:
+            logger.warning(f"Flow not found when trying to resume: {flow_id}")
+            return
+
+        # Use state machine to handle flow resume
+        from .flow_state_machine import FlowEvent
+        try:
+            new_state, success = self.state_machine.transition(flow, FlowEvent.RESUME)
+            if not success:
+                logger.warning(f"Failed to resume flow {flow_id}")
+                # Fallback to direct method
+                flow.resume()
+        except InvalidTransitionError as e:
+            logger.error(f"Invalid transition when resuming flow {flow_id}: {e}")
+            # Fallback to direct method if in valid state
+            if flow.status == FlowStatus.PAUSED:
+                flow.resume()
 
     def get_flow_progress(self, flow_id: str) -> Optional[Dict[str, Any]]:
         """Get flow progress"""
         flow = self.get_flow(flow_id)
-        if flow:
+        if not flow:
+            return None
+            
+        # Use state machine to get detailed flow state summary
+        try:
+            return self.state_machine.get_flow_state_summary(flow)
+        except Exception as e:
+            logger.error(f"Error getting flow state summary for {flow_id}: {e}")
+            # Fallback to basic progress info
             return flow.get_progress()
-        return None
 
     def list_active_flows(
         self, session_id: Optional[str] = None
@@ -511,3 +597,68 @@ class FlowManager:
         if flow_type not in self.flow_definitions:
             return 0
         return len(self.flow_definitions[flow_type]["steps"])
+        
+    def reset_flow(self, flow_id: str) -> bool:
+        """Reset a flow to its initial state"""
+        flow = self.get_flow(flow_id)
+        if not flow:
+            logger.warning(f"Flow not found when trying to reset: {flow_id}")
+            return False
+            
+        # Use state machine to reset the flow
+        try:
+            return self.state_machine.reset_flow(flow)
+        except Exception as e:
+            logger.error(f"Error resetting flow {flow_id}: {e}")
+            return False
+            
+    def get_flow_state_history(self, flow_id: str) -> List[Dict[str, Any]]:
+        """Get state transition history for a flow"""
+        flow = self.get_flow(flow_id)
+        if not flow:
+            logger.warning(f"Flow not found when trying to get history: {flow_id}")
+            return []
+            
+        return self.state_machine.get_state_history(flow_id)
+        
+    def get_valid_transitions(self, flow_id: str) -> List[str]:
+        """Get valid transitions for a flow's current state"""
+        flow = self.get_flow(flow_id)
+        if not flow:
+            logger.warning(f"Flow not found when trying to get valid transitions: {flow_id}")
+            return []
+            
+        from .flow_state_machine import FlowEvent
+        transitions = self.state_machine.get_valid_transitions(flow)
+        return [event.value for event in transitions.keys()]
+        
+    def restore_flow(self, flow_id: str, session_id: str) -> Optional[str]:
+        """
+        Restore a flow from database
+        
+        Args:
+            flow_id: Flow identifier
+            session_id: Session identifier
+            
+        Returns:
+            Flow ID if successful, None otherwise
+        """
+        if not self.db:
+            logger.warning("Cannot restore flow without database")
+            return None
+            
+        try:
+            # Restore flow state from database
+            flow = self.state_machine.restore_flow_state(flow_id, session_id)
+            if not flow:
+                logger.warning(f"Failed to restore flow {flow_id}")
+                return None
+                
+            # Add to active flows
+            self.active_flows[flow_id] = flow
+            logger.info(f"Restored flow {flow_id}")
+            return flow_id
+            
+        except Exception as e:
+            logger.error(f"Error restoring flow {flow_id}: {e}")
+            return None

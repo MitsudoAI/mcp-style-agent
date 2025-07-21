@@ -119,6 +119,42 @@ class FlowExecutionError(DeepThinkingError):
             self.details["step_id"] = step_id
 
 
+class FlowStateError(DeepThinkingError):
+    """Raised when there are flow state-related errors"""
+
+    def __init__(
+        self,
+        message: str,
+        flow_id: str = None,
+        current_state: str = None,
+        **kwargs
+    ):
+        super().__init__(message, **kwargs)
+        self.flow_id = flow_id
+        self.current_state = current_state
+        if flow_id:
+            self.details["flow_id"] = flow_id
+        if current_state:
+            self.details["current_state"] = current_state
+
+
+class InvalidTransitionError(FlowStateError):
+    """Raised when an invalid state transition is attempted"""
+
+    def __init__(
+        self,
+        message: str,
+        flow_id: str = None,
+        current_state: str = None,
+        event: str = None,
+        **kwargs
+    ):
+        super().__init__(message, flow_id, current_state, **kwargs)
+        self.event = event
+        if event:
+            self.details["event"] = event
+
+
 class DataValidationError(DeepThinkingError):
     """Raised when data validation fails"""
 
