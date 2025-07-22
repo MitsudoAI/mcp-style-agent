@@ -309,3 +309,18 @@ class DatabaseError(DeepThinkingError):
             self.details["operation"] = operation
         if table:
             self.details["table"] = table
+
+
+class TemplateError(DeepThinkingError):
+    """Raised when template operations fail"""
+
+    def __init__(
+        self, message: str, template_name: str = None, template_type: str = None, **kwargs
+    ):
+        super().__init__(message, **kwargs)
+        self.template_name = template_name
+        self.template_type = template_type
+        if template_name:
+            self.details["template_name"] = template_name
+        if template_type:
+            self.details["template_type"] = template_type
