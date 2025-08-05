@@ -17,6 +17,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+from .parameter_replacer import ParameterReplacer, ParameterConfig, ReplacementContext, ParameterValidationError
+
 
 class ConfigurationError(Exception):
     """Configuration error"""
@@ -92,6 +94,10 @@ class TemplateManager:
         self.hot_reload_enabled = False
         self.observer = None
 
+        # Initialize parameter replacer
+        self.parameter_replacer = ParameterReplacer()
+        self._setup_parameter_configs()
+
         # Create templates directory and versions subdirectory
         self.templates_dir.mkdir(exist_ok=True)
         self.versions_dir = self.templates_dir / "versions"
@@ -99,6 +105,102 @@ class TemplateManager:
         
         # Initialize built-in templates
         self._create_builtin_templates()
+
+    def _setup_parameter_configs(self):
+        """Setup parameter configurations for common template parameters"""
+        # Common parameters used across templates
+        common_configs = [
+            ParameterConfig(
+                name="topic",
+                required=True,
+                description="The main topic or question to analyze",
+                validator=self.parameter_replacer.validators['not_empty']
+            ),
+            ParameterConfig(
+                name="complexity",
+                required=False,
+                default_value="moderate",
+                description="Complexity level: low, moderate, high",
+                validator=lambda x: str(x).lower() in ['low', 'moderate', 'high']
+            ),
+            ParameterConfig(
+                name="focus",
+                required=False,
+                default_value="",
+                description="Specific focus area or constraint"
+            ),
+            ParameterConfig(
+                name="domain_context",
+                required=False,
+                default_value="general",
+                description="Domain or field context for the analysis"
+            ),
+            ParameterConfig(
+                name="sub_question",
+                required=False,
+                description="A specific sub-question to analyze"
+            ),
+            ParameterConfig(
+                name="keywords",
+                required=False,
+                formatter=lambda x: ', '.join(x) if isinstance(x, list) else str(x),
+                description="Search keywords for evidence collection"
+            ),
+            ParameterConfig(
+                name="evidence_summary",
+                required=False,
+                formatter=self.parameter_replacer.formatters['truncate'],
+                description="Summary of collected evidence"
+            ),
+            ParameterConfig(
+                name="content",
+                required=False,
+                description="Content to be analyzed or evaluated"
+            ),
+            ParameterConfig(
+                name="context",
+                required=False,
+                description="Additional context for the analysis"
+            ),
+            ParameterConfig(
+                name="concept",
+                required=False,
+                description="Concept for innovation thinking"
+            ),
+            ParameterConfig(
+                name="direction",
+                required=False,
+                default_value="general improvement",
+                description="Direction for innovation"
+            ),
+            ParameterConfig(
+                name="constraints",
+                required=False,
+                default_value="none specified",
+                description="Constraints for innovation thinking"
+            ),
+            ParameterConfig(
+                name="method",
+                required=False,
+                default_value="SCAMPER",
+                description="Innovation method to use"
+            ),
+            ParameterConfig(
+                name="thinking_history",
+                required=False,
+                formatter=self.parameter_replacer.formatters['truncate'],
+                description="History of the thinking process"
+            ),
+            ParameterConfig(
+                name="current_conclusions",
+                required=False,
+                description="Current conclusions reached"
+            ),
+        ]
+        
+        # Register all parameter configurations
+        for config in common_configs:
+            self.parameter_replacer.register_parameter_config(config)
 
     def _create_builtin_templates(self):
         """Create built-in templates and save them to the templates directory"""
@@ -773,13 +875,20 @@ class TemplateManager:
         with open(version_meta_path, "w", encoding="utf-8") as f:
             json.dump(version_meta, f, indent=2)
 
-    def get_template(self, name: str, params: Optional[Dict[str, Any]] = None, use_default_if_missing: bool = False) -> str:
+    def get_template(
+        self, 
+        name: str, 
+        params: Optional[Dict[str, Any]] = None, 
+        context: Optional[ReplacementContext] = None,
+        use_default_if_missing: bool = False
+    ) -> str:
         """
         Get a template with parameters substituted
         
         Args:
             name: Template name
             params: Parameters to substitute in the template
+            context: Replacement context with session info and variables
             use_default_if_missing: If True, return a default template if the requested one is not found
             
         Returns:
@@ -820,17 +929,24 @@ class TemplateManager:
             self.metadata[name]["last_used"] = datetime.now()
             self.usage_stats[name] = self.usage_stats.get(name, 0) + 1
 
-        # Replace parameters in the template
-        for key, value in params.items():
-            placeholder = "{" + key + "}"
-            if value is None:
-                value = f"[{key}]"  # Use placeholder for None values
-            template = template.replace(placeholder, str(value))
+        # Use the advanced parameter replacer
+        try:
+            result = self.parameter_replacer.replace_parameters(template, params, context)
+            return result
+        except ParameterValidationError as e:
+            # Log the validation error but continue with basic replacement
+            print(f"Parameter validation warning for template '{name}': {e}")
+            
+            # Fallback to basic replacement
+            for key, value in params.items():
+                placeholder = "{" + key + "}"
+                if value is None:
+                    value = f"[{key}]"  # Use placeholder for None values
+                template = template.replace(placeholder, str(value))
 
-        # Replace any remaining {param} with [param]
-        template = re.sub(r"{([^{}]+)}", r"[\1]", template)
-
-        return template
+            # Replace any remaining {param} with [param]
+            template = re.sub(r"{([^{}]+)}", r"[\1]", template)
+            return template
     
     def _load_template_from_file(self, name: str) -> bool:
         """
@@ -1065,3 +1181,87 @@ class TemplateManager:
     def is_hot_reload_enabled(self) -> bool:
         """Check if hot reload is enabled"""
         return self.hot_reload_enabled
+    
+    def register_parameter_config(self, config: ParameterConfig):
+        """Register a parameter configuration"""
+        self.parameter_replacer.register_parameter_config(config)
+    
+    def register_formatter(self, name: str, formatter):
+        """Register a custom formatter"""
+        self.parameter_replacer.register_formatter(name, formatter)
+    
+    def register_validator(self, name: str, validator):
+        """Register a custom validator"""
+        self.parameter_replacer.register_validator(name, validator)
+    
+    def set_global_context(self, context: Dict[str, Any]):
+        """Set global context variables"""
+        self.parameter_replacer.set_global_context(context)
+    
+    def extract_template_parameters(self, name: str) -> List[str]:
+        """Extract all parameter names from a template"""
+        if name not in self.cache:
+            self._load_template_from_file(name)
+        
+        if name not in self.cache:
+            raise ConfigurationError(f"Template '{name}' not found")
+        
+        return self.parameter_replacer.extract_parameters(self.cache[name])
+    
+    def validate_template(self, name: str) -> Dict[str, Any]:
+        """Validate a template and return analysis"""
+        if name not in self.cache:
+            self._load_template_from_file(name)
+        
+        if name not in self.cache:
+            raise ConfigurationError(f"Template '{name}' not found")
+        
+        return self.parameter_replacer.validate_template(self.cache[name])
+    
+    def get_parameter_documentation(self) -> str:
+        """Get documentation for all registered parameters"""
+        return self.parameter_replacer.create_parameter_documentation()
+    
+    def test_parameter_replacement(
+        self, 
+        name: str, 
+        params: Dict[str, Any], 
+        context: Optional[ReplacementContext] = None
+    ) -> Dict[str, Any]:
+        """Test parameter replacement and return detailed results"""
+        if name not in self.cache:
+            self._load_template_from_file(name)
+        
+        if name not in self.cache:
+            raise ConfigurationError(f"Template '{name}' not found")
+        
+        template = self.cache[name]
+        
+        # Extract parameters from template
+        template_params = self.parameter_replacer.extract_parameters(template)
+        
+        # Validate template
+        validation_result = self.parameter_replacer.validate_template(template)
+        
+        # Attempt replacement
+        try:
+            result = self.parameter_replacer.replace_parameters(template, params, context)
+            replacement_success = True
+            replacement_error = None
+        except Exception as e:
+            result = str(e)
+            replacement_success = False
+            replacement_error = str(e)
+        
+        return {
+            'template_name': name,
+            'template_parameters': template_params,
+            'provided_parameters': list(params.keys()),
+            'missing_parameters': [p for p in template_params if p not in params],
+            'extra_parameters': [p for p in params.keys() if p not in template_params],
+            'validation_result': validation_result,
+            'replacement_success': replacement_success,
+            'replacement_error': replacement_error,
+            'result': result if replacement_success else None,
+            'result_length': len(result) if replacement_success else 0
+        }

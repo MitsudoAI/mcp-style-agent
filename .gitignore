@@ -60,6 +60,9 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
+# Template versions (auto-generated)
+templates/versions/
+
 # Secrets
 .env.local
 .env.production
