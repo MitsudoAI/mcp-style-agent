@@ -324,3 +324,113 @@ class TemplateError(DeepThinkingError):
             self.details["template_name"] = template_name
         if template_type:
             self.details["template_type"] = template_type
+
+
+class MCPToolError(DeepThinkingError):
+    """Base class for MCP tool-related errors"""
+
+    def __init__(
+        self, message: str, tool_name: str = None, session_id: str = None, **kwargs
+    ):
+        super().__init__(message, **kwargs)
+        self.tool_name = tool_name
+        self.session_id = session_id
+        if tool_name:
+            self.details["tool_name"] = tool_name
+        if session_id:
+            self.details["session_id"] = session_id
+
+
+class MCPToolExecutionError(MCPToolError):
+    """Raised when MCP tool execution fails"""
+
+    def __init__(
+        self,
+        message: str,
+        tool_name: str = None,
+        session_id: str = None,
+        step_name: str = None,
+        **kwargs,
+    ):
+        super().__init__(message, tool_name, session_id, **kwargs)
+        self.step_name = step_name
+        if step_name:
+            self.details["step_name"] = step_name
+
+
+class MCPToolValidationError(MCPToolError):
+    """Raised when MCP tool input validation fails"""
+
+    def __init__(
+        self,
+        message: str,
+        tool_name: str = None,
+        validation_errors: list = None,
+        **kwargs,
+    ):
+        super().__init__(message, tool_name, **kwargs)
+        self.validation_errors = validation_errors or []
+        if validation_errors:
+            self.details["validation_errors"] = validation_errors
+
+
+class MCPSessionRecoveryError(MCPToolError):
+    """Raised when MCP session recovery fails"""
+
+    def __init__(
+        self,
+        message: str,
+        session_id: str = None,
+        recovery_data: dict = None,
+        **kwargs,
+    ):
+        super().__init__(message, session_id=session_id, **kwargs)
+        self.recovery_data = recovery_data
+        if recovery_data:
+            self.details["recovery_data"] = recovery_data
+
+
+class MCPFormatValidationError(MCPToolError):
+    """Raised when MCP tool output format validation fails"""
+
+    def __init__(
+        self,
+        message: str,
+        step_name: str = None,
+        expected_format: str = None,
+        actual_format: str = None,
+        **kwargs,
+    ):
+        super().__init__(message, **kwargs)
+        self.step_name = step_name
+        self.expected_format = expected_format
+        self.actual_format = actual_format
+        if step_name:
+            self.details["step_name"] = step_name
+        if expected_format:
+            self.details["expected_format"] = expected_format
+        if actual_format:
+            self.details["actual_format"] = actual_format
+
+
+class MCPQualityGateError(MCPToolError):
+    """Raised when quality gate validation fails"""
+
+    def __init__(
+        self,
+        message: str,
+        step_name: str = None,
+        quality_score: float = None,
+        quality_threshold: float = None,
+        **kwargs,
+    ):
+        super().__init__(message, **kwargs)
+        self.step_name = step_name
+        self.quality_score = quality_score
+        self.quality_threshold = quality_threshold
+        if step_name:
+            self.details["step_name"] = step_name
+        if quality_score is not None:
+            self.details["quality_score"] = quality_score
+        if quality_threshold is not None:
+            self.details["quality_threshold"] = quality_threshold

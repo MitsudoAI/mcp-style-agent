@@ -5,6 +5,7 @@ Provides dynamic loading, caching, and version management for templates.
 """
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -18,6 +19,8 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from .parameter_replacer import ParameterReplacer, ParameterConfig, ReplacementContext, ParameterValidationError
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigurationError(Exception):
@@ -915,7 +918,14 @@ class TemplateManager:
             # If still not found, handle according to flag
             if name not in self.cache:
                 if use_default_if_missing:
-                    return f"Template not found: {name}. This is a default placeholder."
+                    # Try to find a suitable fallback template
+                    fallback_template = self._get_fallback_template(name, params)
+                    if fallback_template:
+                        logger.warning(f"Using fallback template for missing template '{name}'")
+                        return fallback_template
+                    else:
+                        # Return generic template as last resort
+                        return self._generate_generic_template(name, params)
                 else:
                     raise ConfigurationError(f"Template '{name}' not found")
 
@@ -1265,3 +1275,464 @@ class TemplateManager:
             'result': result if replacement_success else None,
             'result_length': len(result) if replacement_success else 0
         }
+
+    def _get_fallback_template(self, name: str, params: Dict[str, Any]) -> Optional[str]:
+        """
+        Get a suitable fallback template for a missing template
+        
+        Args:
+            name: Name of the missing template
+            params: Parameters that would be used with the template
+            
+        Returns:
+            Fallback template content if found, None otherwise
+        """
+        # Define fallback mappings for common templates
+        fallback_mappings = {
+            # Specific templates can fall back to more general ones
+            "advanced_decomposition": "decomposition",
+            "advanced_critical_evaluation": "critical_evaluation",
+            "comprehensive_evidence_collection": "evidence_collection",
+            "detailed_bias_detection": "bias_detection",
+            "enhanced_innovation": "innovation",
+            "deep_reflection": "reflection",
+            
+            # Analysis templates can fall back to generic analysis
+            "analyze_decomposition": "generic_analysis",
+            "analyze_evidence": "generic_analysis", 
+            "analyze_debate": "generic_analysis",
+            "analyze_evaluation": "generic_analysis",
+            "analyze_reflection": "generic_analysis",
+            
+            # Step-specific templates can fall back to generic step template
+            "step_guidance": "generic_step",
+            "step_instructions": "generic_step",
+        }
+        
+        # Try direct fallback mapping first
+        fallback_name = fallback_mappings.get(name)
+        if fallback_name and fallback_name in self.cache:
+            logger.info(f"Using fallback template '{fallback_name}' for missing template '{name}'")
+            return self.cache[fallback_name]
+        
+        # Try to find templates with similar names
+        similar_templates = self._find_similar_templates(name)
+        if similar_templates:
+            best_match = similar_templates[0]
+            logger.info(f"Using similar template '{best_match}' for missing template '{name}'")
+            return self.cache[best_match]
+        
+        # Try category-based fallbacks
+        category_fallbacks = {
+            "decompos": "decomposition",
+            "evidence": "evidence_collection", 
+            "debate": "debate",
+            "evaluat": "critical_evaluation",
+            "bias": "bias_detection",
+            "innovat": "innovation",
+            "reflect": "reflection",
+            "analyz": "generic_analysis"
+        }
+        
+        for keyword, fallback_template in category_fallbacks.items():
+            if keyword in name.lower() and fallback_template in self.cache:
+                logger.info(f"Using category fallback template '{fallback_template}' for missing template '{name}'")
+                return self.cache[fallback_template]
+        
+        return None
+
+    def _find_similar_templates(self, name: str) -> List[str]:
+        """
+        Find templates with similar names to the missing template
+        
+        Args:
+            name: Name of the missing template
+            
+        Returns:
+            List of similar template names, sorted by similarity
+        """
+        similar_templates = []
+        name_lower = name.lower()
+        
+        for template_name in self.cache.keys():
+            template_lower = template_name.lower()
+            
+            # Calculate similarity score
+            similarity_score = 0
+            
+            # Exact substring match gets high score
+            if name_lower in template_lower or template_lower in name_lower:
+                similarity_score += 10
+            
+            # Common words get medium score
+            name_words = set(name_lower.split('_'))
+            template_words = set(template_lower.split('_'))
+            common_words = name_words.intersection(template_words)
+            similarity_score += len(common_words) * 3
+            
+            # Similar length gets small bonus
+            length_diff = abs(len(name) - len(template_name))
+            if length_diff < 5:
+                similarity_score += 1
+            
+            if similarity_score > 0:
+                similar_templates.append((template_name, similarity_score))
+        
+        # Sort by similarity score (descending)
+        similar_templates.sort(key=lambda x: x[1], reverse=True)
+        
+        # Return just the template names
+        return [template[0] for template in similar_templates[:3]]
+
+    def _generate_generic_template(self, name: str, params: Dict[str, Any]) -> str:
+        """
+        Generate a generic template as a last resort fallback
+        
+        Args:
+            name: Name of the missing template
+            params: Parameters that would be used with the template
+            
+        Returns:
+            Generic template content
+        """
+        logger.warning(f"Generating generic template for missing template '{name}'")
+        
+        # Determine template type from name
+        template_type = self._determine_template_type(name)
+        
+        # Generate appropriate generic template
+        if template_type == "analysis":
+            return self._generate_generic_analysis_template(name, params)
+        elif template_type == "step":
+            return self._generate_generic_step_template(name, params)
+        elif template_type == "evaluation":
+            return self._generate_generic_evaluation_template(name, params)
+        else:
+            return self._generate_basic_generic_template(name, params)
+
+    def _determine_template_type(self, name: str) -> str:
+        """Determine the type of template based on its name"""
+        name_lower = name.lower()
+        
+        if any(word in name_lower for word in ["evaluat", "assess", "review"]):
+            return "evaluation"
+        elif any(word in name_lower for word in ["step", "instruct", "guid", "direct"]):
+            return "step"
+        elif any(word in name_lower for word in ["decompos", "evidence", "debate", "bias", "innovat", "reflect", "analyz", "analysis"]):
+            return "analysis"
+        else:
+            return "generic"
+
+    def _generate_generic_analysis_template(self, name: str, params: Dict[str, Any]) -> str:
+        """Generate a generic analysis template"""
+        topic = params.get("topic", "the given topic")
+        context = params.get("context", "")
+        
+        return f"""
+# 通用分析框架
+
+**注意**: 原始模板 '{name}' 不可用，使用通用分析框架。
+
+## 分析目标
+请对 {topic} 进行深入分析。
+
+## 分析步骤
+
+### 1. 问题理解
+- 明确分析的核心问题
+- 识别关键要素和变量
+- 确定分析的范围和边界
+
+### 2. 信息收集
+- 收集相关的事实和数据
+- 查找权威来源和参考资料
+- 整理和组织收集到的信息
+
+### 3. 多角度分析
+- 从不同角度审视问题
+- 考虑各种可能的解释和观点
+- 识别潜在的偏见和局限性
+
+### 4. 逻辑推理
+- 基于收集的信息进行推理
+- 识别因果关系和关联性
+- 评估不同观点的合理性
+
+### 5. 结论总结
+- 综合分析结果
+- 提出明确的结论和建议
+- 指出不确定性和需要进一步研究的领域
+
+## 输出要求
+- 结构清晰，逻辑连贯
+- 有充分的证据支撑
+- 考虑多个角度和观点
+- 结论明确，建议可行
+
+请按照以上框架进行分析。
+"""
+
+    def _generate_generic_step_template(self, name: str, params: Dict[str, Any]) -> str:
+        """Generate a generic step template"""
+        step_name = params.get("step_name", name.replace("_", " "))
+        
+        return f"""
+# 步骤指导: {step_name}
+
+**注意**: 原始模板 '{name}' 不可用，使用通用步骤指导。
+
+## 步骤目标
+完成 {step_name} 相关的任务。
+
+## 执行指导
+
+### 准备阶段
+1. 明确当前步骤的具体目标
+2. 回顾之前步骤的结果和发现
+3. 确定本步骤需要的资源和信息
+
+### 执行阶段
+1. 按照步骤要求进行操作
+2. 注意保持逻辑清晰和结构完整
+3. 记录重要的发现和洞察
+
+### 验证阶段
+1. 检查结果是否符合要求
+2. 验证逻辑的一致性和完整性
+3. 确保为下一步骤做好准备
+
+## 质量标准
+- 完整性: 覆盖所有必要的方面
+- 准确性: 信息和分析准确可靠
+- 清晰性: 表达清楚，易于理解
+- 相关性: 与整体目标保持一致
+
+请按照以上指导完成当前步骤。
+"""
+
+    def _generate_generic_evaluation_template(self, name: str, params: Dict[str, Any]) -> str:
+        """Generate a generic evaluation template"""
+        content = params.get("content", "提供的内容")
+        
+        return f"""
+# 通用评估框架
+
+**注意**: 原始模板 '{name}' 不可用，使用通用评估框架。
+
+## 评估对象
+{content}
+
+## 评估维度
+
+### 1. 内容质量 (1-10分)
+- 信息的准确性和可靠性
+- 内容的完整性和全面性
+- 论证的深度和细节
+- 评分: ___/10分，理由:
+
+### 2. 逻辑结构 (1-10分)
+- 推理过程的逻辑性
+- 结构的清晰性和条理性
+- 论点之间的连贯性
+- 评分: ___/10分，理由:
+
+### 3. 证据支撑 (1-10分)
+- 证据的充分性
+- 来源的权威性和可信度
+- 证据与结论的相关性
+- 评分: ___/10分，理由:
+
+### 4. 分析深度 (1-10分)
+- 分析的深入程度
+- 对复杂性的处理
+- 细节的关注度
+- 评分: ___/10分，理由:
+
+### 5. 客观性 (1-10分)
+- 观点的平衡性
+- 偏见的控制
+- 多角度的考虑
+- 评分: ___/10分，理由:
+
+## 总体评估
+- 综合得分: ___/50分
+- 主要优势:
+- 改进建议:
+- 是否需要重新分析: 是/否
+
+请按照以上框架进行详细评估。
+"""
+
+    def _generate_basic_generic_template(self, name: str, params: Dict[str, Any]) -> str:
+        """Generate a basic generic template"""
+        return f"""
+# 通用模板
+
+**注意**: 原始模板 '{name}' 不可用，使用基础通用模板。
+
+## 任务说明
+请完成与 '{name}' 相关的任务。
+
+## 基本要求
+1. 明确任务目标和要求
+2. 收集必要的信息和资料
+3. 进行系统性的分析和思考
+4. 提供清晰的结论和建议
+
+## 输出格式
+请按照以下结构组织你的回答：
+
+### 问题分析
+- 核心问题是什么？
+- 涉及哪些关键要素？
+
+### 信息收集
+- 收集了哪些相关信息？
+- 信息来源是否可靠？
+
+### 分析过程
+- 使用了什么分析方法？
+- 考虑了哪些不同角度？
+
+### 结论建议
+- 得出了什么结论？
+- 有什么具体建议？
+
+请按照以上框架完成任务。
+"""
+
+    def detect_missing_templates(self) -> Dict[str, Any]:
+        """
+        Detect missing templates that are commonly needed
+        
+        Returns:
+            Dictionary with information about missing templates
+        """
+        expected_templates = {
+            # Core thinking templates
+            "decomposition": "问题分解模板",
+            "evidence_collection": "证据收集模板", 
+            "debate": "多角度辩论模板",
+            "critical_evaluation": "批判性评估模板",
+            "bias_detection": "偏见检测模板",
+            "innovation": "创新思维模板",
+            "reflection": "反思引导模板",
+            
+            # Analysis templates
+            "generic_analysis": "通用分析模板",
+            "analyze_decomposition": "分解分析模板",
+            "analyze_evidence": "证据分析模板",
+            "analyze_debate": "辩论分析模板",
+            "analyze_evaluation": "评估分析模板",
+            "analyze_reflection": "反思分析模板",
+            
+            # Utility templates
+            "session_recovery": "会话恢复模板",
+            "comprehensive_summary": "综合总结模板",
+            "generic_step": "通用步骤模板",
+        }
+        
+        missing_templates = []
+        available_templates = []
+        
+        for template_name, description in expected_templates.items():
+            if template_name in self.cache:
+                available_templates.append({
+                    "name": template_name,
+                    "description": description,
+                    "status": "available"
+                })
+            else:
+                # Check if template file exists but not loaded
+                template_path = self.templates_dir / f"{template_name}.tmpl"
+                if template_path.exists():
+                    available_templates.append({
+                        "name": template_name,
+                        "description": description,
+                        "status": "not_loaded"
+                    })
+                else:
+                    missing_templates.append({
+                        "name": template_name,
+                        "description": description,
+                        "status": "missing",
+                        "fallback_available": self._get_fallback_template(template_name, {}) is not None
+                    })
+        
+        return {
+            "missing_templates": missing_templates,
+            "available_templates": available_templates,
+            "total_expected": len(expected_templates),
+            "total_missing": len(missing_templates),
+            "missing_percentage": (len(missing_templates) / len(expected_templates)) * 100
+        }
+
+    def repair_missing_template(self, template_name: str, template_content: Optional[str] = None) -> bool:
+        """
+        Repair a missing template by creating it or reloading it
+        
+        Args:
+            template_name: Name of the template to repair
+            template_content: Optional content to use for the template
+            
+        Returns:
+            True if repair successful, False otherwise
+        """
+        try:
+            template_path = self.templates_dir / f"{template_name}.tmpl"
+            
+            # If template file exists but not loaded, try to reload
+            if template_path.exists() and template_name not in self.cache:
+                logger.info(f"Reloading existing template file: {template_name}")
+                self._load_template_from_file(template_name)
+                return template_name in self.cache
+            
+            # If template content provided, create the template file
+            if template_content:
+                logger.info(f"Creating missing template: {template_name}")
+                template_path.write_text(template_content, encoding='utf-8')
+                self._load_template_from_file(template_name)
+                return template_name in self.cache
+            
+            # Try to generate a generic template
+            if template_name not in self.cache:
+                logger.info(f"Generating generic template for: {template_name}")
+                generic_content = self._generate_generic_template(template_name, {})
+                template_path.write_text(generic_content, encoding='utf-8')
+                self._load_template_from_file(template_name)
+                return template_name in self.cache
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error repairing template {template_name}: {e}")
+            return False
+
+    def auto_repair_missing_templates(self) -> Dict[str, Any]:
+        """
+        Automatically repair commonly missing templates
+        
+        Returns:
+            Dictionary with repair results
+        """
+        missing_info = self.detect_missing_templates()
+        repair_results = {
+            "attempted": [],
+            "successful": [],
+            "failed": [],
+            "total_repaired": 0
+        }
+        
+        for template_info in missing_info["missing_templates"]:
+            template_name = template_info["name"]
+            repair_results["attempted"].append(template_name)
+            
+            if self.repair_missing_template(template_name):
+                repair_results["successful"].append(template_name)
+                repair_results["total_repaired"] += 1
+                logger.info(f"Successfully repaired template: {template_name}")
+            else:
+                repair_results["failed"].append(template_name)
+                logger.warning(f"Failed to repair template: {template_name}")
+        
+        return repair_results

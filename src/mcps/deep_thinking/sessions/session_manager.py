@@ -626,3 +626,581 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Error getting full trace for {session_id}: {e}")
             return {"error": str(e)}
+
+    def recover_session(
+        self, session_id: str, recovery_data: Dict[str, Any]
+    ) -> bool:
+        """
+        Attempt to recover a session from provided recovery data
+        
+        Args:
+            session_id: Session ID to recover
+            recovery_data: Data to use for recovery including:
+                - topic: The original topic
+                - current_step: Current step name
+                - completed_steps: List of completed steps (optional)
+                - context: Session context (optional)
+                - flow_type: Flow type (optional)
+                
+        Returns:
+            True if recovery successful, False otherwise
+        """
+        try:
+            # Validate required recovery data
+            if not recovery_data.get("topic"):
+                logger.warning(f"Recovery data missing topic for session {session_id}")
+                return False
+                
+            if not recovery_data.get("current_step"):
+                logger.warning(f"Recovery data missing current_step for session {session_id}")
+                return False
+
+            # Create new session state from recovery data
+            session_state = SessionState(
+                session_id=session_id,
+                topic=recovery_data["topic"],
+                current_step=recovery_data.get("current_step", "decompose_problem"),
+                flow_type=recovery_data.get("flow_type", "comprehensive_analysis"),
+                context=recovery_data.get("context", {}),
+                step_number=len(recovery_data.get("completed_steps", [])),
+                status="active",
+                created_at=datetime.now(),
+            )
+
+            # Add completed steps if provided
+            completed_steps = recovery_data.get("completed_steps", [])
+            if completed_steps:
+                for i, step_name in enumerate(completed_steps):
+                    session_state.step_results[step_name] = {
+                        "result": f"Recovered step: {step_name}",
+                        "quality_score": 0.8,  # Default quality score for recovered steps
+                        "timestamp": datetime.now().isoformat(),
+                        "recovered": True,
+                    }
+
+            # Create the session in database
+            configuration = {
+                "complexity": session_state.context.get("complexity", "moderate"),
+                "flow_type": session_state.flow_type,
+                "focus": session_state.context.get("focus", ""),
+                "recovered": True,
+                "recovery_timestamp": datetime.now().isoformat(),
+                "original_session_id": session_id,
+            }
+
+            # Create session in database
+            db_session_id = self.db.create_session(
+                user_id="recovered_user",
+                topic=session_state.topic,
+                session_type=session_state.flow_type,
+                configuration=configuration,
+            )
+
+            if not db_session_id:
+                logger.error(f"Failed to create recovered session in database")
+                return False
+
+            # Update session ID if database generated a different one
+            if db_session_id != session_id:
+                session_state.session_id = db_session_id
+
+            # Add recovered steps to database
+            for step_name in completed_steps:
+                step_id = self.db.add_session_step(
+                    session_id=session_state.session_id,
+                    step_name=step_name,
+                    step_number=completed_steps.index(step_name) + 1,
+                    step_type=self._determine_step_type(step_name),
+                    quality_score=0.8,
+                )
+                
+                if step_id:
+                    # Add a recovery marker result
+                    self.db.add_step_result(
+                        step_id=step_id,
+                        result_type="recovery",
+                        content=f"Step {step_name} recovered from session recovery",
+                        metadata={"recovered": True, "recovery_timestamp": datetime.now().isoformat()},
+                    )
+
+            # Cache the recovered session
+            self._active_sessions[session_state.session_id] = session_state
+
+            logger.info(f"Successfully recovered session {session_state.session_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error recovering session {session_id}: {e}")
+            return False
+
+    def detect_flow_interruption(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Detect if a flow has been interrupted and needs recovery
+        
+        Args:
+            session_id: Session ID to check
+            
+        Returns:
+            Dictionary with interruption details if detected, None otherwise
+        """
+        try:
+            session = self.get_session(session_id)
+        except SessionNotFoundError:
+            return {
+                "interrupted": True,
+                "reason": "session_not_found",
+                "session_id": session_id,
+                "recovery_needed": True
+            }
+        except Exception as e:
+            logger.error(f"Error detecting flow interruption for session {session_id}: {e}")
+            return {
+                "interrupted": True,
+                "reason": "detection_error",
+                "error": str(e),
+                "session_id": session_id,
+                "recovery_needed": True
+            }
+        
+        if not session:
+            return {
+                "interrupted": True,
+                "reason": "session_not_found",
+                "session_id": session_id,
+                "recovery_needed": True
+            }
+        
+        # Check for various interruption indicators
+        interruption_details = {
+            "interrupted": False,
+            "session_id": session_id,
+            "current_step": session.current_step,
+            "completed_steps": list(session.step_results.keys()),
+            "reasons": []
+        }
+            
+        # Check for session timeout (inactive for too long)
+        if session.updated_at:
+            time_since_update = datetime.now() - session.updated_at
+            if time_since_update.total_seconds() > 1800:  # 30 minutes
+                interruption_details["interrupted"] = True
+                interruption_details["reasons"].append("session_timeout")
+                interruption_details["timeout_duration"] = f"{time_since_update.total_seconds() / 60:.1f} minutes"
+                interruption_details["last_activity"] = session.updated_at.isoformat()
+        
+        # Check for incomplete step execution
+        if session.current_step and session.current_step not in session.step_results:
+            interruption_details["interrupted"] = True
+            interruption_details["reasons"].append("incomplete_step_execution")
+            interruption_details["incomplete_step"] = session.current_step
+        
+        # Check for quality gate failures
+        if session.quality_scores:
+            low_quality_steps = [
+                step for step, score in session.quality_scores.items() 
+                if score < 0.6
+            ]
+            if low_quality_steps:
+                interruption_details["interrupted"] = True
+                interruption_details["reasons"].append("quality_gate_failure")
+                interruption_details["low_quality_steps"] = low_quality_steps
+        
+        # Check for flow state inconsistencies
+        expected_steps = self._get_expected_steps_for_flow(session.flow_type)
+        completed_steps = list(session.step_results.keys())
+        
+        # Check for missing prerequisite steps
+        missing_prerequisites = []
+        for step in completed_steps:
+            prerequisites = self._get_step_prerequisites(step)
+            for prereq in prerequisites:
+                if prereq not in completed_steps:
+                    missing_prerequisites.append((step, prereq))
+        
+        if missing_prerequisites:
+            interruption_details["interrupted"] = True
+            interruption_details["reasons"].append("missing_prerequisites")
+            interruption_details["missing_prerequisites"] = missing_prerequisites
+        
+        # Check for unexpected step sequence (only if current step is not in completed steps)
+        if len(completed_steps) > 0 and session.current_step not in session.step_results:
+            last_completed = completed_steps[-1]
+            if session.current_step:
+                expected_next = self._get_expected_next_step(last_completed, session.flow_type)
+                if expected_next and session.current_step != expected_next:
+                    interruption_details["interrupted"] = True
+                    interruption_details["reasons"].append("unexpected_step_sequence")
+                    interruption_details["expected_step"] = expected_next
+                    interruption_details["actual_step"] = session.current_step
+        
+        if interruption_details["interrupted"]:
+            interruption_details["recovery_needed"] = True
+            interruption_details["recovery_options"] = self._generate_recovery_options(interruption_details)
+            logger.warning(f"Flow interruption detected for session {session_id}: {interruption_details['reasons']}")
+        
+        return interruption_details if interruption_details["interrupted"] else None
+
+    def rollback_to_step(self, session_id: str, target_step: str) -> bool:
+        """
+        Rollback session state to a specific step
+        
+        Args:
+            session_id: Session ID to rollback
+            target_step: Step to rollback to
+            
+        Returns:
+            True if rollback successful, False otherwise
+        """
+        try:
+            session = self.get_session(session_id)
+            if not session:
+                logger.error(f"Cannot rollback: session {session_id} not found")
+                return False
+            
+            # Validate target step exists in completed steps
+            if target_step not in session.step_results:
+                logger.error(f"Cannot rollback to step {target_step}: step not found in session {session_id}")
+                return False
+            
+            # Get all steps completed after the target step
+            completed_steps = list(session.step_results.keys())
+            target_index = completed_steps.index(target_step)
+            steps_to_remove = completed_steps[target_index + 1:]
+            
+            # Remove steps after target step
+            for step_to_remove in steps_to_remove:
+                if step_to_remove in session.step_results:
+                    del session.step_results[step_to_remove]
+                if step_to_remove in session.quality_scores:
+                    del session.quality_scores[step_to_remove]
+            
+            # Update session state
+            session.current_step = target_step
+            session.step_number = target_index + 1
+            session.updated_at = datetime.now()
+            
+            # Add rollback metadata to context
+            if "rollback_history" not in session.context:
+                session.context["rollback_history"] = []
+            
+            session.context["rollback_history"].append({
+                "timestamp": datetime.now().isoformat(),
+                "target_step": target_step,
+                "removed_steps": steps_to_remove,
+                "reason": "manual_rollback"
+            })
+            
+            # Update in database if available
+            if self.db:
+                try:
+                    self.db.update_session(
+                        session_id=session_id,
+                        current_step=session.current_step,
+                        step_number=session.step_number,
+                        configuration={
+                            **session.context,
+                            "rolled_back": True,
+                            "rollback_timestamp": datetime.now().isoformat()
+                        }
+                    )
+                    
+                    # Mark removed steps as rolled back in database
+                    for step_name in steps_to_remove:
+                        step_id = self.db.add_session_step(
+                            session_id=session_id,
+                            step_name=step_name,
+                            step_type="rollback_marker",
+                            quality_score=0.0
+                        )
+                        if step_id:
+                            self.db.add_step_result(
+                                step_id=step_id,
+                                result_type="rollback",
+                                content=f"Step {step_name} rolled back to {target_step}",
+                                metadata={
+                                    "rolled_back": True,
+                                    "rollback_timestamp": datetime.now().isoformat(),
+                                    "target_step": target_step
+                                }
+                            )
+                except Exception as db_error:
+                    logger.error(f"Error updating database during rollback: {db_error}")
+                    # Continue with in-memory rollback even if database update fails
+            
+            logger.info(f"Successfully rolled back session {session_id} to step {target_step}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error rolling back session {session_id} to step {target_step}: {e}")
+            return False
+
+    def create_recovery_checkpoint(self, session_id: str) -> Optional[str]:
+        """
+        Create a recovery checkpoint for the current session state
+        
+        Args:
+            session_id: Session ID to create checkpoint for
+            
+        Returns:
+            Checkpoint ID if successful, None otherwise
+        """
+        try:
+            session = self.get_session(session_id)
+            if not session:
+                logger.error(f"Cannot create checkpoint: session {session_id} not found")
+                return None
+            
+            checkpoint_id = f"{session_id}_checkpoint_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            # Create checkpoint data
+            checkpoint_data = {
+                "checkpoint_id": checkpoint_id,
+                "session_id": session_id,
+                "timestamp": datetime.now().isoformat(),
+                "session_state": {
+                    "topic": session.topic,
+                    "current_step": session.current_step,
+                    "flow_type": session.flow_type,
+                    "context": session.context.copy(),
+                    "step_results": session.step_results.copy(),
+                    "quality_scores": session.quality_scores.copy(),
+                    "step_number": session.step_number,
+                    "status": session.status
+                }
+            }
+            
+            # Store checkpoint in session context
+            if "checkpoints" not in session.context:
+                session.context["checkpoints"] = []
+            
+            session.context["checkpoints"].append(checkpoint_data)
+            
+            # Store in database if available
+            if self.db:
+                try:
+                    # Store as a special step result
+                    step_id = self.db.add_session_step(
+                        session_id=session_id,
+                        step_name=f"checkpoint_{checkpoint_id}",
+                        step_type="checkpoint",
+                        quality_score=1.0
+                    )
+                    if step_id:
+                        self.db.add_step_result(
+                            step_id=step_id,
+                            result_type="checkpoint",
+                            content=f"Recovery checkpoint created: {checkpoint_id}",
+                            metadata=checkpoint_data
+                        )
+                except Exception as db_error:
+                    logger.error(f"Error storing checkpoint in database: {db_error}")
+                    # Continue with in-memory checkpoint even if database storage fails
+            
+            logger.info(f"Created recovery checkpoint {checkpoint_id} for session {session_id}")
+            return checkpoint_id
+            
+        except Exception as e:
+            logger.error(f"Error creating recovery checkpoint for session {session_id}: {e}")
+            return None
+
+    def restore_from_checkpoint(self, session_id: str, checkpoint_id: str) -> bool:
+        """
+        Restore session state from a recovery checkpoint
+        
+        Args:
+            session_id: Session ID to restore
+            checkpoint_id: Checkpoint ID to restore from
+            
+        Returns:
+            True if restore successful, False otherwise
+        """
+        try:
+            session = self.get_session(session_id)
+            if not session:
+                logger.error(f"Cannot restore checkpoint: session {session_id} not found")
+                return False
+            
+            # Find checkpoint in session context
+            checkpoint_data = None
+            if "checkpoints" in session.context:
+                for checkpoint in session.context["checkpoints"]:
+                    if checkpoint["checkpoint_id"] == checkpoint_id:
+                        checkpoint_data = checkpoint
+                        break
+            
+            if not checkpoint_data:
+                logger.error(f"Checkpoint {checkpoint_id} not found for session {session_id}")
+                return False
+            
+            # Restore session state from checkpoint
+            saved_state = checkpoint_data["session_state"]
+            session.topic = saved_state["topic"]
+            session.current_step = saved_state["current_step"]
+            session.flow_type = saved_state["flow_type"]
+            session.context = saved_state["context"].copy()
+            session.step_results = saved_state["step_results"].copy()
+            session.quality_scores = saved_state["quality_scores"].copy()
+            session.step_number = saved_state["step_number"]
+            session.status = saved_state["status"]
+            session.updated_at = datetime.now()
+            
+            # Add restore metadata
+            session.context["restored_from_checkpoint"] = {
+                "checkpoint_id": checkpoint_id,
+                "restore_timestamp": datetime.now().isoformat(),
+                "original_checkpoint_timestamp": checkpoint_data["timestamp"]
+            }
+            
+            # Update in database if available
+            if self.db:
+                try:
+                    self.db.update_session(
+                        session_id=session_id,
+                        current_step=session.current_step,
+                        step_number=session.step_number,
+                        configuration={
+                            **session.context,
+                            "restored_from_checkpoint": True,
+                            "restore_timestamp": datetime.now().isoformat()
+                        }
+                    )
+                except Exception as db_error:
+                    logger.error(f"Error updating database during checkpoint restore: {db_error}")
+                    # Continue with in-memory restore even if database update fails
+            
+            logger.info(f"Successfully restored session {session_id} from checkpoint {checkpoint_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error restoring session {session_id} from checkpoint {checkpoint_id}: {e}")
+            return False
+
+    def _get_expected_steps_for_flow(self, flow_type: str) -> List[str]:
+        """Get expected steps for a flow type"""
+        flow_steps = {
+            "comprehensive_analysis": [
+                "decompose_problem",
+                "collect_evidence", 
+                "multi_perspective_debate",
+                "critical_evaluation",
+                "bias_detection",
+                "innovation_thinking",
+                "reflection"
+            ],
+            "quick_analysis": [
+                "simple_decompose",
+                "basic_evidence",
+                "quick_evaluation",
+                "brief_reflection"
+            ]
+        }
+        return flow_steps.get(flow_type, [])
+
+    def _get_step_prerequisites(self, step: str) -> List[str]:
+        """Get prerequisite steps for a given step"""
+        prerequisites = {
+            "collect_evidence": ["decompose_problem"],
+            "multi_perspective_debate": ["collect_evidence"],
+            "critical_evaluation": ["multi_perspective_debate"],
+            "bias_detection": ["critical_evaluation"],
+            "innovation_thinking": ["bias_detection"],
+            "reflection": ["innovation_thinking"],
+            "basic_evidence": ["simple_decompose"],
+            "quick_evaluation": ["basic_evidence"],
+            "brief_reflection": ["quick_evaluation"]
+        }
+        return prerequisites.get(step, [])
+
+    def _get_expected_next_step(self, current_step: str, flow_type: str) -> Optional[str]:
+        """Get expected next step after current step"""
+        expected_steps = self._get_expected_steps_for_flow(flow_type)
+        try:
+            current_index = expected_steps.index(current_step)
+            if current_index + 1 < len(expected_steps):
+                return expected_steps[current_index + 1]
+        except ValueError:
+            pass
+        return None
+
+    def _generate_recovery_options(self, interruption_details: Dict[str, Any]) -> List[str]:
+        """Generate recovery options based on interruption details"""
+        options = []
+        reasons = interruption_details.get("reasons", [])
+        
+        if "session_timeout" in reasons:
+            options.extend(["resume_from_last_step", "restart_flow", "create_new_session"])
+        
+        if "incomplete_step_execution" in reasons:
+            options.extend(["retry_current_step", "skip_current_step", "rollback_to_previous"])
+        
+        if "quality_gate_failure" in reasons:
+            options.extend(["improve_quality", "rollback_and_retry", "continue_with_warning"])
+        
+        if "missing_prerequisites" in reasons:
+            options.extend(["execute_missing_steps", "rollback_to_valid_state", "restart_flow"])
+        
+        if "unexpected_step_sequence" in reasons:
+            options.extend(["correct_step_sequence", "rollback_to_expected", "manual_override"])
+        
+        # Always include basic recovery options
+        if not options:
+            options = ["retry_current_step", "rollback_to_previous", "restart_flow"]
+        
+        return list(set(options))  # Remove duplicates
+
+    def repair_session_state(
+        self, session_id: str, repair_data: Dict[str, Any]
+    ) -> bool:
+        """
+        Repair corrupted session state
+        
+        Args:
+            session_id: Session ID to repair
+            repair_data: Data to use for repair including:
+                - current_step: Corrected current step
+                - context: Updated context
+                - step_results: Corrected step results
+                
+        Returns:
+            True if repair successful, False otherwise
+        """
+        try:
+            # Get existing session
+            session = self.get_session(session_id)
+            if not session:
+                logger.warning(f"Cannot repair non-existent session {session_id}")
+                return False
+
+            # Apply repairs
+            if "current_step" in repair_data:
+                session.current_step = repair_data["current_step"]
+                
+            if "context" in repair_data:
+                session.context.update(repair_data["context"])
+                
+            if "step_results" in repair_data:
+                session.step_results.update(repair_data["step_results"])
+
+            # Update session in database
+            success = self.db.update_session(
+                session_id=session_id,
+                status=session.status,
+                configuration={
+                    **session.context,
+                    "repaired": True,
+                    "repair_timestamp": datetime.now().isoformat(),
+                }
+            )
+
+            if success:
+                # Update cached session
+                self._active_sessions[session_id] = session
+                logger.info(f"Successfully repaired session {session_id}")
+                return True
+            else:
+                logger.error(f"Failed to update repaired session {session_id} in database")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error repairing session {session_id}: {e}")
+            return False

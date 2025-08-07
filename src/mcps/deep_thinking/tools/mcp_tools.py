@@ -11,7 +11,15 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from ..config.exceptions import DeepThinkingError
+from ..config.exceptions import (
+    DeepThinkingError,
+    MCPFormatValidationError,
+    MCPQualityGateError,
+    MCPSessionRecoveryError,
+    MCPToolError,
+    MCPToolExecutionError,
+    SessionNotFoundError,
+)
 from ..flows.flow_manager import FlowManager
 from ..models.mcp_models import (
     AnalyzeStepInput,
@@ -24,6 +32,7 @@ from ..models.mcp_models import (
 )
 from ..sessions.session_manager import SessionManager
 from ..templates.template_manager import TemplateManager
+from .mcp_error_handler import MCPErrorHandler
 
 
 class MCPTools:
@@ -44,6 +53,7 @@ class MCPTools:
         self.session_manager = session_manager
         self.template_manager = template_manager
         self.flow_manager = flow_manager
+        self.error_handler = MCPErrorHandler(session_manager, template_manager)
 
     def start_thinking(self, input_data: StartThinkingInput) -> MCPToolOutput:
         """
@@ -100,7 +110,18 @@ class MCPTools:
             )
 
         except Exception as e:
-            raise DeepThinkingError(f"Failed to start thinking session: {str(e)}")
+            try:
+                return self.error_handler.handle_mcp_error(
+                    tool_name="start_thinking",
+                    error=e,
+                    session_id=None,
+                    context={"topic": input_data.topic, "complexity": input_data.complexity}
+                )
+            except Exception as handler_error:
+                # Fallback if error handler fails
+                return self.error_handler._create_fallback_response(
+                    "start_thinking", e, None
+                )
 
     def next_step(self, input_data: NextStepInput) -> MCPToolOutput:
         """
@@ -113,21 +134,15 @@ class MCPTools:
             # Get current session state
             try:
                 session = self.session_manager.get_session(input_data.session_id)
-            except Exception:
-                # Session not found - return session recovery prompt
-                recovery_prompt = self.template_manager.get_template(
-                    "session_recovery", {"session_id": input_data.session_id}
-                )
-
-                return MCPToolOutput(
-                    tool_name=MCPToolName.NEXT_STEP,
+                if session is None:
+                    raise SessionNotFoundError("Session not found", session_id=input_data.session_id)
+            except Exception as e:
+                # Session not found - use error handler for consistent handling
+                return self.error_handler.handle_mcp_error(
+                    tool_name="next_step",
+                    error=e,
                     session_id=input_data.session_id,
-                    step="session_recovery",
-                    prompt_template=recovery_prompt,
-                    instructions="会话已丢失，请选择如何继续",
-                    context={"error": "session_not_found"},
-                    next_action="重新开始或尝试恢复会话",
-                    metadata={"error_recovery": True},
+                    context={"step_result": input_data.step_result}
                 )
 
             # Extract quality score from step result if provided
@@ -203,7 +218,18 @@ class MCPTools:
             )
 
         except Exception as e:
-            return self._handle_error("next_step", str(e), input_data.session_id)
+            try:
+                return self.error_handler.handle_mcp_error(
+                    tool_name="next_step",
+                    error=e,
+                    session_id=input_data.session_id,
+                    context={"step_result": input_data.step_result}
+                )
+            except Exception as handler_error:
+                # Fallback if error handler fails
+                return self.error_handler._create_fallback_response(
+                    "next_step", e, input_data.session_id
+                )
 
     def analyze_step(self, input_data: AnalyzeStepInput) -> MCPToolOutput:
         """
@@ -307,7 +333,22 @@ class MCPTools:
             )
 
         except Exception as e:
-            return self._handle_error("analyze_step", str(e), input_data.session_id)
+            try:
+                return self.error_handler.handle_mcp_error(
+                    tool_name="analyze_step",
+                    error=e,
+                    session_id=input_data.session_id,
+                    context={
+                        "step_name": input_data.step_name,
+                        "step_result": input_data.step_result,
+                        "analysis_type": input_data.analysis_type,
+                    }
+                )
+            except Exception as handler_error:
+                # Fallback if error handler fails
+                return self.error_handler._create_fallback_response(
+                    "analyze_step", e, input_data.session_id
+                )
 
     def complete_thinking(self, input_data: CompleteThinkingInput) -> MCPToolOutput:
         """
@@ -414,9 +455,18 @@ class MCPTools:
             )
 
         except Exception as e:
-            return self._handle_error(
-                "complete_thinking", str(e), input_data.session_id
-            )
+            try:
+                return self.error_handler.handle_mcp_error(
+                    tool_name="complete_thinking",
+                    error=e,
+                    session_id=input_data.session_id,
+                    context={"final_insights": input_data.final_insights}
+                )
+            except Exception as handler_error:
+                # Fallback if error handler fails
+                return self.error_handler._create_fallback_response(
+                    "complete_thinking", e, input_data.session_id
+                )
 
     def _build_template_params(
         self, session: SessionState, previous_result: str
@@ -1018,38 +1068,22 @@ class MCPTools:
     def _handle_format_validation_failure(
         self, session_id: str, step_name: str, validation_result: Dict[str, Any]
     ) -> MCPToolOutput:
-        """Handle format validation failure"""
-        template_params = {
-            "step_name": step_name,
-            "expected_format": validation_result["expected_format"],
-            "format_issues": "\n".join(
-                f"- {issue}" for issue in validation_result["issues"]
-            ),
-            "format_requirements": validation_result["format_requirements"],
-            "format_example": self._get_format_example(step_name),
-            "common_format_errors": self._get_common_format_errors(step_name),
-        }
-
-        prompt_template = self.template_manager.get_template(
-            "format_validation_failed", template_params
+        """Handle format validation failure using error handler"""
+        error = MCPFormatValidationError(
+            f"Format validation failed for step {step_name}",
+            step_name=step_name,
+            expected_format=validation_result["expected_format"],
         )
-
-        return MCPToolOutput(
-            tool_name=MCPToolName.ANALYZE_STEP,
+        
+        return self.error_handler.handle_mcp_error(
+            tool_name="format_validator",
+            error=error,
             session_id=session_id,
-            step=f"format_validation_{step_name}",
-            prompt_template=prompt_template,
-            instructions="请按照正确格式重新提交步骤结果",
             context={
-                "format_validation_failed": True,
                 "step_name": step_name,
-                "validation_issues": validation_result["issues"],
-            },
-            next_action="修正格式问题后重新提交步骤结果",
-            metadata={
-                "format_validation": False,
-                "validation_issues_count": len(validation_result["issues"]),
-            },
+                "format_issues": validation_result["issues"],
+                "expected_format": validation_result["expected_format"],
+            }
         )
 
     def _get_format_example(self, step_name: str) -> str:
@@ -1133,20 +1167,16 @@ class MCPTools:
         return "基于前面步骤得出的当前结论"
 
     def _handle_session_not_found(self, session_id: str) -> MCPToolOutput:
-        """Handle case where session is not found"""
-        recovery_prompt = self.template_manager.get_template(
-            "session_recovery", {"session_id": session_id}
+        """Handle case where session is not found using error handler"""
+        error = SessionNotFoundError(
+            f"Session {session_id} not found", session_id=session_id
         )
-
-        return MCPToolOutput(
-            tool_name=MCPToolName.NEXT_STEP,
+        
+        return self.error_handler.handle_mcp_error(
+            tool_name="session_manager",
+            error=error,
             session_id=session_id,
-            step="session_recovery",
-            prompt_template=recovery_prompt,
-            instructions="会话已丢失，请选择如何继续",
-            context={"error": "session_not_found"},
-            next_action="重新开始或尝试恢复会话",
-            metadata={"error_recovery": True},
+            context={"session_id": session_id}
         )
 
     def _handle_flow_completion(self, session_id: str) -> MCPToolOutput:
@@ -1169,29 +1199,18 @@ class MCPTools:
     def _handle_error(
         self, tool_name: str, error_message: str, session_id: Optional[str] = None
     ) -> MCPToolOutput:
-        """Handle tool execution errors"""
-        error_prompt = self.template_manager.get_template(
-            "error_recovery",
-            {
-                "tool_name": tool_name,
-                "error_message": error_message,
-                "session_id": session_id,
-            },
+        """Handle tool execution errors using the error handler"""
+        # Create a generic exception for the error handler
+        error = MCPToolExecutionError(
+            error_message, tool_name=tool_name, session_id=session_id
         )
-
-        return MCPToolOutput(
-            tool_name=MCPToolName.NEXT_STEP,
+        
+        # Use the error handler to create appropriate recovery response
+        return self.error_handler.handle_mcp_error(
+            tool_name=tool_name,
+            error=error,
             session_id=session_id,
-            step="error_recovery",
-            prompt_template=error_prompt,
-            instructions="发生错误，请选择如何继续",
-            context={
-                "error": True,
-                "error_message": error_message,
-                "failed_tool": tool_name,
-            },
-            next_action="选择错误恢复选项",
-            metadata={"error_recovery": True, "original_tool": tool_name},
+            context={"error_message": error_message}
         )
 
     # Enhanced helper methods for complete_thinking tool
