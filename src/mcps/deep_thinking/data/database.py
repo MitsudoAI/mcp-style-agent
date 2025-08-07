@@ -74,6 +74,9 @@ class ThinkingDatabase:
         """Initialize database with required tables"""
         try:
             with self.get_connection() as conn:
+                # Enable foreign key constraints
+                conn.execute("PRAGMA foreign_keys=ON")
+                
                 # Enable WAL mode for better concurrent performance (skip for memory db)
                 if self.db_path != ":memory:":
                     conn.execute("PRAGMA journal_mode=WAL")
@@ -214,6 +217,8 @@ class ThinkingDatabase:
             if self._memory_conn is None:
                 self._memory_conn = sqlite3.connect(":memory:")
                 self._memory_conn.row_factory = sqlite3.Row
+                # Enable foreign keys for in-memory connection
+                self._memory_conn.execute("PRAGMA foreign_keys=ON")
             yield self._memory_conn
         else:
             # For file databases, create new connections
@@ -222,6 +227,8 @@ class ThinkingDatabase:
             )
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row  # Enable dict-like access
+            # Enable foreign keys for each connection
+            conn.execute("PRAGMA foreign_keys=ON")
             try:
                 yield conn
             finally:
@@ -681,3 +688,155 @@ class ThinkingDatabase:
         except Exception as e:
             logger.error(f"Error cleaning up old sessions: {e}")
             return 0
+
+    def export_session_data(self, session_id: str, include_sensitive: bool = False) -> Optional[Dict[str, Any]]:
+        """
+        Export complete session data for backup or analysis
+        
+        Args:
+            session_id: Session to export
+            include_sensitive: Whether to include encrypted/sensitive data
+            
+        Returns:
+            Complete session data or None if not found
+        """
+        try:
+            session_data = self.get_session(session_id)
+            if not session_data:
+                return None
+                
+            steps = self.get_session_steps(session_id)
+            results = self.get_step_results(session_id)
+            
+            export_data = {
+                "session": session_data,
+                "steps": steps,
+                "results": results,
+                "export_timestamp": datetime.now().isoformat(),
+                "encryption_enabled": self.encryption is not None,
+            }
+            
+            # Remove sensitive data if requested
+            if not include_sensitive and self.encryption:
+                # Remove encrypted fields
+                if "topic_encrypted" in export_data["session"]:
+                    export_data["session"].pop("topic_encrypted", None)
+                    
+                # Clear sensitive step data
+                for step in export_data["steps"]:
+                    step["input_data"] = {"redacted": True}
+                    step["output_data"] = {"redacted": True}
+                    
+                for result in export_data["results"]:
+                    result["content"] = "[REDACTED]"
+            
+            return export_data
+            
+        except Exception as e:
+            logger.error(f"Error exporting session {session_id}: {e}")
+            return None
+
+    def backup_database(self, backup_path: str) -> bool:
+        """
+        Create a backup of the database
+        
+        Args:
+            backup_path: Path for the backup file
+            
+        Returns:
+            True if successful
+        """
+        try:
+            if self.db_path == ":memory:":
+                logger.warning("Cannot backup in-memory database")
+                return False
+                
+            import shutil
+            
+            # Create backup with timestamp
+            backup_file = f"{backup_path}.{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+            shutil.copy2(self.db_path, backup_file)
+            
+            logger.info(f"Database backed up to {backup_file}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error backing up database: {e}")
+            return False
+
+    def verify_data_integrity(self) -> Dict[str, Any]:
+        """
+        Verify database integrity and consistency
+        
+        Returns:
+            Integrity check results
+        """
+        try:
+            with self.get_connection() as conn:
+                integrity_results = {
+                    "database_integrity": True,
+                    "foreign_key_violations": [],
+                    "orphaned_records": [],
+                    "data_consistency": True,
+                    "check_timestamp": datetime.now().isoformat()
+                }
+                
+                # Check database integrity
+                cursor = conn.execute("PRAGMA integrity_check")
+                integrity_check = cursor.fetchall()
+                if len(integrity_check) > 1 or integrity_check[0][0] != "ok":
+                    integrity_results["database_integrity"] = False
+                    integrity_results["integrity_errors"] = [row[0] for row in integrity_check]
+                
+                # Check foreign key constraints
+                cursor = conn.execute("PRAGMA foreign_key_check")
+                fk_violations = cursor.fetchall()
+                if fk_violations:
+                    integrity_results["foreign_key_violations"] = [
+                        {"table": row[0], "rowid": row[1], "parent": row[2], "fkid": row[3]}
+                        for row in fk_violations
+                    ]
+                
+                # Check for orphaned session steps
+                cursor = conn.execute("""
+                    SELECT ss.id, ss.session_id 
+                    FROM session_steps ss 
+                    LEFT JOIN thinking_sessions ts ON ss.session_id = ts.id 
+                    WHERE ts.id IS NULL
+                """)
+                orphaned_steps = cursor.fetchall()
+                if orphaned_steps:
+                    integrity_results["orphaned_records"].extend([
+                        {"type": "session_step", "id": row[0], "session_id": row[1]}
+                        for row in orphaned_steps
+                    ])
+                
+                # Check for orphaned step results
+                cursor = conn.execute("""
+                    SELECT sr.id, sr.session_id, sr.step_id
+                    FROM step_results sr 
+                    LEFT JOIN session_steps ss ON sr.step_id = ss.id 
+                    WHERE ss.id IS NULL
+                """)
+                orphaned_results = cursor.fetchall()
+                if orphaned_results:
+                    integrity_results["orphaned_records"].extend([
+                        {"type": "step_result", "id": row[0], "session_id": row[1], "step_id": row[2]}
+                        for row in orphaned_results
+                    ])
+                
+                # Update overall consistency status
+                integrity_results["data_consistency"] = (
+                    len(integrity_results["foreign_key_violations"]) == 0 and
+                    len(integrity_results["orphaned_records"]) == 0
+                )
+                
+                return integrity_results
+                
+        except Exception as e:
+            logger.error(f"Error verifying data integrity: {e}")
+            return {
+                "database_integrity": False,
+                "error": str(e),
+                "check_timestamp": datetime.now().isoformat()
+            }

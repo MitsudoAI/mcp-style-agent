@@ -272,6 +272,108 @@ class TestThinkingDatabase:
         steps = encrypted_db.get_session_steps(session_id)
         assert steps[0]["input_data"]["sensitive_info"] == "confidential data"
 
+    def test_data_security_features(self, encrypted_db):
+        """Test additional data security features"""
+        session_id = "security-test"
+        topic = "Confidential research topic"
+        
+        # Create session with sensitive configuration
+        config = {
+            "api_keys": "secret-key-123",
+            "user_preferences": {"privacy_level": "high"},
+            "internal_notes": "This is confidential information"
+        }
+        
+        encrypted_db.create_session(session_id, topic, configuration=config)
+        
+        # Verify data is stored and retrieved correctly
+        session = encrypted_db.get_session(session_id)
+        assert session["configuration"]["api_keys"] == "secret-key-123"
+        assert session["configuration"]["user_preferences"]["privacy_level"] == "high"
+        
+        # Test that raw database doesn't contain unencrypted sensitive data
+        # This would require direct database access to verify encryption
+        
+    def test_transaction_management(self, temp_db):
+        """Test database transaction management"""
+        session_id = "transaction-test"
+        topic = "Transaction testing"
+        
+        # Test successful transaction
+        success = temp_db.create_session(session_id, topic)
+        assert success
+        
+        # Test that duplicate creation fails (integrity constraint)
+        success = temp_db.create_session(session_id, topic)
+        assert not success
+        
+        # Verify original session still exists
+        session = temp_db.get_session(session_id)
+        assert session is not None
+        assert session["topic"] == topic
+
+    def test_data_cleanup_and_archival(self, temp_db):
+        """Test data cleanup and archival functionality"""
+        from datetime import datetime, timedelta
+        
+        # Create multiple sessions with different statuses
+        for i in range(5):
+            session_id = f"cleanup-test-{i}"
+            temp_db.create_session(session_id, f"Topic {i}")
+            
+            # Mark some as completed with completed_at timestamp
+            if i < 3:
+                old_date = (datetime.now() - timedelta(days=1)).isoformat()
+                temp_db.update_session(
+                    session_id, 
+                    status="completed",
+                    completed_at=old_date
+                )
+        
+        # Test cleanup of old sessions
+        cleaned = temp_db.cleanup_old_sessions(days_old=0)  # Clean all completed
+        assert cleaned >= 3  # Should clean at least the 3 completed sessions
+        
+        # Verify active sessions remain
+        active_sessions = temp_db.list_sessions(status="active")
+        assert len(active_sessions) >= 2
+
+    def test_data_export_functionality(self, temp_db):
+        """Test data export functionality"""
+        session_id = "export-test"
+        topic = "Export testing topic"
+        
+        # Create session with steps and results
+        temp_db.create_session(session_id, topic)
+        step_id = temp_db.add_session_step(session_id, "analysis", 1, "analysis")
+        temp_db.add_step_result(session_id, step_id, "output", "Analysis result")
+        
+        # Export session data
+        export_data = temp_db.export_session_data(session_id)
+        
+        assert export_data is not None
+        assert export_data["session"]["id"] == session_id
+        assert export_data["session"]["topic"] == topic
+        assert len(export_data["steps"]) == 1
+        assert len(export_data["results"]) == 1
+        assert "export_timestamp" in export_data
+
+    def test_data_integrity_verification(self, temp_db):
+        """Test data integrity verification"""
+        # Create some test data
+        session_id = "integrity-test"
+        temp_db.create_session(session_id, "Integrity test")
+        step_id = temp_db.add_session_step(session_id, "test_step", 1, "test")
+        temp_db.add_step_result(session_id, step_id, "output", "test result")
+        
+        # Run integrity check
+        integrity_results = temp_db.verify_data_integrity()
+        
+        assert integrity_results["database_integrity"] is True
+        assert len(integrity_results["foreign_key_violations"]) == 0
+        assert len(integrity_results["orphaned_records"]) == 0
+        assert integrity_results["data_consistency"] is True
+
 
 class TestSessionManager:
     """Test the session manager"""
@@ -291,10 +393,23 @@ class TestSessionManager:
 
     def test_create_and_get_session(self, temp_session_manager):
         """Test session creation and retrieval"""
+        from src.mcps.deep_thinking.models.mcp_models import SessionState
+        import uuid
+        
         topic = "How to improve learning efficiency"
+        session_id = str(uuid.uuid4())
+        
+        # Create SessionState object as expected by the current interface
+        session_state = SessionState(
+            session_id=session_id,
+            topic=topic,
+            current_step="initialize",
+            flow_type="comprehensive_analysis",
+            context={"complexity": "moderate"}
+        )
 
-        session_id = temp_session_manager.create_session(topic, complexity="moderate")
-        assert session_id is not None
+        created_session_id = temp_session_manager.create_session(session_state)
+        assert created_session_id == session_id
 
         session = temp_session_manager.get_session(session_id)
         assert session.topic == topic
@@ -303,8 +418,22 @@ class TestSessionManager:
 
     def test_update_session_step(self, temp_session_manager):
         """Test session step updates"""
+        from src.mcps.deep_thinking.models.mcp_models import SessionState
+        import uuid
+        
         topic = "AI ethics framework"
-        session_id = temp_session_manager.create_session(topic)
+        session_id = str(uuid.uuid4())
+        
+        # Create SessionState object
+        session_state = SessionState(
+            session_id=session_id,
+            topic=topic,
+            current_step="initialize",
+            flow_type="comprehensive_analysis",
+            context={"complexity": "moderate"}
+        )
+        
+        created_session_id = temp_session_manager.create_session(session_state)
 
         success = temp_session_manager.update_session_step(
             session_id,
@@ -321,8 +450,22 @@ class TestSessionManager:
 
     def test_session_context(self, temp_session_manager):
         """Test session context generation"""
+        from src.mcps.deep_thinking.models.mcp_models import SessionState
+        import uuid
+        
         topic = "Sustainable development goals"
-        session_id = temp_session_manager.create_session(topic)
+        session_id = str(uuid.uuid4())
+        
+        # Create SessionState object
+        session_state = SessionState(
+            session_id=session_id,
+            topic=topic,
+            current_step="initialize",
+            flow_type="comprehensive_analysis",
+            context={"complexity": "moderate"}
+        )
+        
+        temp_session_manager.create_session(session_state)
 
         # Add some steps
         temp_session_manager.update_session_step(
@@ -341,8 +484,22 @@ class TestSessionManager:
 
     def test_complete_session(self, temp_session_manager):
         """Test session completion"""
+        from src.mcps.deep_thinking.models.mcp_models import SessionState
+        import uuid
+        
         topic = "Innovation in education"
-        session_id = temp_session_manager.create_session(topic)
+        session_id = str(uuid.uuid4())
+        
+        # Create SessionState object
+        session_state = SessionState(
+            session_id=session_id,
+            topic=topic,
+            current_step="initialize",
+            flow_type="comprehensive_analysis",
+            context={"complexity": "moderate"}
+        )
+        
+        temp_session_manager.create_session(session_state)
 
         final_results = {
             "summary": "Comprehensive analysis completed",
@@ -358,8 +515,22 @@ class TestSessionManager:
 
     def test_session_history(self, temp_session_manager):
         """Test session history retrieval"""
+        from src.mcps.deep_thinking.models.mcp_models import SessionState
+        import uuid
+        
         topic = "Future of work"
-        session_id = temp_session_manager.create_session(topic)
+        session_id = str(uuid.uuid4())
+        
+        # Create SessionState object
+        session_state = SessionState(
+            session_id=session_id,
+            topic=topic,
+            current_step="initialize",
+            flow_type="comprehensive_analysis",
+            context={"complexity": "moderate"}
+        )
+        
+        temp_session_manager.create_session(session_state)
 
         # Add steps and results
         temp_session_manager.update_session_step(
@@ -379,6 +550,181 @@ class TestSessionManager:
         assert "summary" in history
         assert history["summary"]["total_steps"] == 1
         assert len(history["steps"][0]["results"]) == 1
+
+    def test_session_search(self, temp_session_manager):
+        """Test session search functionality"""
+        from src.mcps.deep_thinking.models.mcp_models import SessionState
+        import uuid
+        
+        # Create multiple sessions with different topics
+        topics = ["Machine Learning", "Artificial Intelligence", "Data Science"]
+        session_ids = []
+        
+        for topic in topics:
+            session_id = str(uuid.uuid4())
+            session_state = SessionState(
+                session_id=session_id,
+                topic=topic,
+                current_step="initialize",
+                flow_type="comprehensive_analysis",
+                context={"complexity": "moderate"}
+            )
+            temp_session_manager.create_session(session_state)
+            session_ids.append(session_id)
+        
+        # Search for sessions
+        ml_sessions = temp_session_manager.search_sessions("Machine")
+        assert len(ml_sessions) >= 1
+        assert any("Machine Learning" in session["topic"] for session in ml_sessions)
+        
+        ai_sessions = temp_session_manager.search_sessions("Intelligence")
+        assert len(ai_sessions) >= 1
+        assert any("Artificial Intelligence" in session["topic"] for session in ai_sessions)
+
+    def test_session_analytics(self, temp_session_manager):
+        """Test session analytics functionality"""
+        from src.mcps.deep_thinking.models.mcp_models import SessionState
+        import uuid
+        
+        session_id = str(uuid.uuid4())
+        topic = "Analytics test topic"
+        
+        # Create session
+        session_state = SessionState(
+            session_id=session_id,
+            topic=topic,
+            current_step="initialize",
+            flow_type="comprehensive_analysis",
+            context={"complexity": "moderate"}
+        )
+        temp_session_manager.create_session(session_state)
+        
+        # Add some steps with quality scores
+        temp_session_manager.update_session_step(
+            session_id, "analysis", "Analysis result", quality_score=0.8
+        )
+        temp_session_manager.update_session_step(
+            session_id, "evaluation", "Evaluation result", quality_score=0.9
+        )
+        
+        # Get analytics
+        analytics = temp_session_manager.get_session_analytics(session_id)
+        
+        assert analytics["session_id"] == session_id
+        assert analytics["topic"] == topic
+        assert analytics["step_analytics"]["total_steps"] == 2
+        assert analytics["quality_analytics"]["overall_quality"] > 0
+        assert "step_quality_scores" in analytics["step_analytics"]
+
+    def test_session_archival_and_restoration(self, temp_session_manager):
+        """Test session archival and restoration"""
+        from src.mcps.deep_thinking.models.mcp_models import SessionState
+        import uuid
+        
+        session_id = str(uuid.uuid4())
+        topic = "Archival test topic"
+        
+        # Create session
+        session_state = SessionState(
+            session_id=session_id,
+            topic=topic,
+            current_step="initialize",
+            flow_type="comprehensive_analysis",
+            context={"complexity": "moderate"}
+        )
+        temp_session_manager.create_session(session_state)
+        
+        # Archive session
+        success = temp_session_manager.archive_session(session_id, "Testing archival")
+        assert success
+        
+        # Verify session is archived
+        session = temp_session_manager.get_session(session_id)
+        assert session.status == "archived"
+        assert session.context.get("archived") is True
+        assert "archive_reason" in session.context
+        
+        # Restore session
+        success = temp_session_manager.restore_session(session_id)
+        assert success
+        
+        # Verify session is restored
+        session = temp_session_manager.get_session(session_id)
+        assert session.status == "active"
+        assert session.context.get("restored") is True
+
+    def test_bulk_session_updates(self, temp_session_manager):
+        """Test bulk session updates"""
+        from src.mcps.deep_thinking.models.mcp_models import SessionState
+        import uuid
+        
+        # Create multiple sessions
+        session_ids = []
+        for i in range(3):
+            session_id = str(uuid.uuid4())
+            session_state = SessionState(
+                session_id=session_id,
+                topic=f"Bulk test topic {i}",
+                current_step="initialize",
+                flow_type="comprehensive_analysis",
+                context={"complexity": "moderate"}
+            )
+            temp_session_manager.create_session(session_state)
+            session_ids.append(session_id)
+        
+        # Bulk update
+        updates = {"status": "paused"}
+        results = temp_session_manager.bulk_update_sessions(session_ids, updates)
+        
+        # Verify all updates succeeded
+        assert len(results) == 3
+        assert all(results.values())
+        
+        # Verify sessions were updated
+        for session_id in session_ids:
+            session = temp_session_manager.get_session(session_id)
+            assert session.status == "paused"
+
+    def test_session_timeline(self, temp_session_manager):
+        """Test session timeline functionality"""
+        from src.mcps.deep_thinking.models.mcp_models import SessionState
+        import uuid
+        
+        session_id = str(uuid.uuid4())
+        topic = "Timeline test topic"
+        
+        # Create session
+        session_state = SessionState(
+            session_id=session_id,
+            topic=topic,
+            current_step="initialize",
+            flow_type="comprehensive_analysis",
+            context={"complexity": "moderate"}
+        )
+        temp_session_manager.create_session(session_state)
+        
+        # Add steps and results
+        temp_session_manager.update_session_step(
+            session_id, "analysis", "Analysis result"
+        )
+        temp_session_manager.add_step_result(
+            session_id, "analysis", "Detailed analysis"
+        )
+        
+        # Get timeline
+        timeline = temp_session_manager.get_session_timeline(session_id)
+        
+        assert len(timeline) >= 3  # session_created, step_completed, result_added
+        
+        # Check that all expected event types are present
+        event_types = [event["event_type"] for event in timeline]
+        assert "session_created" in event_types
+        assert "step_completed" in event_types
+        assert "result_added" in event_types
+        
+        # Verify timeline is sorted by timestamp
+        timestamps = [event["timestamp"] for event in timeline if event["timestamp"]]
+        assert timestamps == sorted(timestamps)
 
 
 if __name__ == "__main__":

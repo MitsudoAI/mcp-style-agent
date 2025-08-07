@@ -106,6 +106,9 @@ class SessionManager:
             raise SessionNotFoundError(f"Session {session_id} not found")
 
         # Convert to SessionState object
+        context_data = session_data.get("context") or {}
+        quality_data = session_data.get("quality_metrics") or {}
+        
         session_state = SessionState(
             session_id=session_data["id"],
             topic=session_data["topic"],
@@ -115,9 +118,9 @@ class SessionManager:
                 "flow_type", session_data.get("session_type", "comprehensive_analysis")
             ),
             status=session_data.get("status", "active"),
-            step_results=session_data.get("context", {}).get("step_results", {}),
-            context=session_data.get("context", {}),
-            quality_scores=session_data.get("quality_metrics", {}),
+            step_results=context_data.get("step_results", {}),
+            context=context_data,
+            quality_scores=quality_data,
             created_at=(
                 datetime.fromisoformat(session_data["created_at"])
                 if session_data.get("created_at")
@@ -307,10 +310,11 @@ class SessionManager:
             }
 
             if final_results:
-                updates["quality_metrics"] = {
-                    **session.quality_scores,
-                    "final_results": final_results,
-                }
+                # Store final results in context, not quality_metrics
+                updated_context = session.context.copy()
+                updated_context["final_results"] = final_results
+                updates["context"] = updated_context
+                updates["quality_metrics"] = session.quality_scores
 
             success = self.db.update_session(session_id, **updates)
 
@@ -355,7 +359,7 @@ class SessionManager:
                 detailed_steps.append(step_data)
 
             return {
-                "session": session.dict(),
+                "session": session.model_dump(),
                 "steps": detailed_steps,
                 "summary": {
                     "total_steps": len(steps),
@@ -526,6 +530,367 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Error getting statistics: {e}")
             return {}
+
+    def search_sessions(
+        self, 
+        query: str, 
+        search_fields: List[str] = None,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Search sessions by topic, content, or other fields
+        
+        Args:
+            query: Search query string
+            search_fields: Fields to search in (topic, configuration, etc.)
+            limit: Maximum results to return
+            
+        Returns:
+            List of matching sessions
+        """
+        try:
+            if search_fields is None:
+                search_fields = ["topic"]
+                
+            with self.db.get_connection() as conn:
+                # Build search query
+                where_clauses = []
+                params = []
+                
+                for field in search_fields:
+                    if field == "topic":
+                        where_clauses.append("topic LIKE ?")
+                        params.append(f"%{query}%")
+                    elif field == "configuration":
+                        where_clauses.append("configuration LIKE ?")
+                        params.append(f"%{query}%")
+                
+                if not where_clauses:
+                    return []
+                
+                sql = f"""
+                    SELECT * FROM thinking_sessions 
+                    WHERE {' OR '.join(where_clauses)}
+                    ORDER BY created_at DESC 
+                    LIMIT ?
+                """
+                params.append(limit)
+                
+                cursor = conn.execute(sql, params)
+                sessions = []
+                
+                for row in cursor.fetchall():
+                    session_data = dict(row)
+                    
+                    # Decrypt topic if encrypted
+                    if self.db.encryption and session_data.get("topic_encrypted"):
+                        session_data["topic"] = self.db._decrypt_if_enabled(
+                            session_data["topic_encrypted"]
+                        )
+                    
+                    sessions.append(session_data)
+                
+                return sessions
+                
+        except Exception as e:
+            logger.error(f"Error searching sessions: {e}")
+            return []
+
+    def get_session_analytics(self, session_id: str) -> Dict[str, Any]:
+        """
+        Get detailed analytics for a session
+        
+        Args:
+            session_id: Session identifier
+            
+        Returns:
+            Analytics data including performance metrics, quality trends, etc.
+        """
+        try:
+            session = self.get_session(session_id)
+            steps = self.db.get_session_steps(session_id)
+            results = self.db.get_step_results(session_id)
+            
+            analytics = {
+                "session_id": session_id,
+                "topic": session.topic,
+                "flow_type": session.flow_type,
+                "status": session.status,
+                "duration_minutes": (
+                    (session.updated_at - session.created_at).total_seconds() / 60
+                    if session.updated_at and session.created_at
+                    else 0
+                ),
+                "step_analytics": {
+                    "total_steps": len(steps),
+                    "completed_steps": len([s for s in steps if s.get("status") == "completed"]),
+                    "average_execution_time": (
+                        sum(s.get("execution_time_ms") or 0 for s in steps) / len(steps)
+                        if steps else 0
+                    ),
+                    "step_quality_scores": {
+                        step["step_name"]: step.get("quality_score", 0)
+                        for step in steps if step.get("quality_score") is not None
+                    }
+                },
+                "quality_analytics": {
+                    "overall_quality": (
+                        sum(session.quality_scores.values()) / len(session.quality_scores)
+                        if session.quality_scores else 0
+                    ),
+                    "quality_trend": self._calculate_quality_trend(steps),
+                    "low_quality_steps": [
+                        step["step_name"] for step in steps 
+                        if step.get("quality_score", 1.0) < 0.7
+                    ]
+                },
+                "content_analytics": {
+                    "total_results": len(results),
+                    "result_types": {},
+                    "content_volume": sum(len(r.get("content", "")) for r in results)
+                }
+            }
+            
+            # Analyze result types
+            for result in results:
+                result_type = result.get("result_type", "unknown")
+                analytics["content_analytics"]["result_types"][result_type] = (
+                    analytics["content_analytics"]["result_types"].get(result_type, 0) + 1
+                )
+            
+            return analytics
+            
+        except Exception as e:
+            logger.error(f"Error getting session analytics for {session_id}: {e}")
+            return {}
+
+    def _calculate_quality_trend(self, steps: List[Dict[str, Any]]) -> str:
+        """Calculate quality trend across steps"""
+        quality_scores = [
+            step.get("quality_score", 0) for step in steps 
+            if step.get("quality_score") is not None
+        ]
+        
+        if len(quality_scores) < 2:
+            return "insufficient_data"
+        
+        # Simple trend calculation
+        first_half = quality_scores[:len(quality_scores)//2]
+        second_half = quality_scores[len(quality_scores)//2:]
+        
+        first_avg = sum(first_half) / len(first_half)
+        second_avg = sum(second_half) / len(second_half)
+        
+        if second_avg > first_avg + 0.1:
+            return "improving"
+        elif second_avg < first_avg - 0.1:
+            return "declining"
+        else:
+            return "stable"
+
+    def archive_session(self, session_id: str, archive_reason: str = "") -> bool:
+        """
+        Archive a session (mark as archived but don't delete)
+        
+        Args:
+            session_id: Session to archive
+            archive_reason: Reason for archiving
+            
+        Returns:
+            True if successful
+        """
+        try:
+            session = self.get_session(session_id)
+            
+            # Update session status and add archive metadata
+            archive_context = session.context.copy()
+            archive_context.update({
+                "archived": True,
+                "archive_timestamp": datetime.now().isoformat(),
+                "archive_reason": archive_reason,
+                "original_status": session.status
+            })
+            
+            success = self.db.update_session(
+                session_id,
+                status="archived",
+                context=archive_context
+            )
+            
+            # Remove from active cache
+            self._active_sessions.pop(session_id, None)
+            
+            if success:
+                logger.info(f"Archived session {session_id}: {archive_reason}")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error archiving session {session_id}: {e}")
+            return False
+
+    def restore_session(self, session_id: str) -> bool:
+        """
+        Restore an archived session
+        
+        Args:
+            session_id: Session to restore
+            
+        Returns:
+            True if successful
+        """
+        try:
+            session = self.get_session(session_id)
+            
+            if session.status != "archived":
+                logger.warning(f"Session {session_id} is not archived")
+                return False
+            
+            # Restore original status
+            original_status = session.context.get("original_status", "active")
+            
+            # Update context to remove archive metadata
+            restore_context = session.context.copy()
+            restore_context.pop("archived", None)
+            restore_context.pop("archive_timestamp", None)
+            restore_context.pop("archive_reason", None)
+            restore_context.pop("original_status", None)
+            restore_context["restored"] = True
+            restore_context["restore_timestamp"] = datetime.now().isoformat()
+            
+            success = self.db.update_session(
+                session_id,
+                status=original_status,
+                context=restore_context
+            )
+            
+            if success:
+                logger.info(f"Restored session {session_id}")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error restoring session {session_id}: {e}")
+            return False
+
+    def bulk_update_sessions(
+        self, 
+        session_ids: List[str], 
+        updates: Dict[str, Any]
+    ) -> Dict[str, bool]:
+        """
+        Update multiple sessions in bulk
+        
+        Args:
+            session_ids: List of session IDs to update
+            updates: Updates to apply to all sessions
+            
+        Returns:
+            Dictionary mapping session_id to success status
+        """
+        results = {}
+        
+        for session_id in session_ids:
+            try:
+                success = self.db.update_session(session_id, **updates)
+                results[session_id] = success
+                
+                # Update cache if session is active
+                if session_id in self._active_sessions:
+                    session = self._active_sessions[session_id]
+                    for key, value in updates.items():
+                        if hasattr(session, key):
+                            setattr(session, key, value)
+                        elif key in ["context", "quality_metrics"]:
+                            if key == "context":
+                                session.context.update(value if isinstance(value, dict) else {})
+                            elif key == "quality_metrics":
+                                session.quality_scores.update(value if isinstance(value, dict) else {})
+                
+            except Exception as e:
+                logger.error(f"Error updating session {session_id}: {e}")
+                results[session_id] = False
+        
+        successful_updates = sum(1 for success in results.values() if success)
+        logger.info(f"Bulk updated {successful_updates}/{len(session_ids)} sessions")
+        
+        return results
+
+    def get_session_timeline(self, session_id: str) -> List[Dict[str, Any]]:
+        """
+        Get chronological timeline of session events
+        
+        Args:
+            session_id: Session identifier
+            
+        Returns:
+            List of timeline events
+        """
+        try:
+            session = self.get_session(session_id)
+            steps = self.db.get_session_steps(session_id)
+            results = self.db.get_step_results(session_id)
+            
+            timeline = []
+            
+            # Add session creation event
+            timeline.append({
+                "timestamp": session.created_at.isoformat() if session.created_at else "",
+                "event_type": "session_created",
+                "description": f"Session created for topic: {session.topic}",
+                "details": {
+                    "flow_type": session.flow_type,
+                    "status": "active"
+                }
+            })
+            
+            # Add step events
+            for step in steps:
+                timeline.append({
+                    "timestamp": step.get("created_at", ""),
+                    "event_type": "step_completed",
+                    "description": f"Completed step: {step['step_name']}",
+                    "details": {
+                        "step_type": step.get("step_type"),
+                        "quality_score": step.get("quality_score"),
+                        "execution_time_ms": step.get("execution_time_ms")
+                    }
+                })
+            
+            # Add result events
+            for result in results:
+                timeline.append({
+                    "timestamp": result.get("created_at", ""),
+                    "event_type": "result_added",
+                    "description": f"Added {result.get('result_type', 'unknown')} result",
+                    "details": {
+                        "result_type": result.get("result_type"),
+                        "content_length": len(result.get("content", "")),
+                        "step_id": result.get("step_id")
+                    }
+                })
+            
+            # Add session completion event if completed
+            if session.status == "completed":
+                timeline.append({
+                    "timestamp": session.updated_at.isoformat() if session.updated_at else "",
+                    "event_type": "session_completed",
+                    "description": "Session completed",
+                    "details": {
+                        "final_status": session.status,
+                        "total_steps": len(steps),
+                        "total_results": len(results)
+                    }
+                })
+            
+            # Sort by timestamp (handle empty timestamps)
+            timeline.sort(key=lambda x: x["timestamp"] or "")
+            
+            return timeline
+            
+        except Exception as e:
+            logger.error(f"Error getting session timeline for {session_id}: {e}")
+            return []
 
     def _determine_step_type(self, step_name: str) -> str:
         """Determine step type from step name"""
