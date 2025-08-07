@@ -1,6 +1,6 @@
 """
 SQLite database implementation for local session storage
-Zero-cost local storage with encryption support
+Zero-cost local storage with encryption support and performance optimization
 """
 
 import json
@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from cryptography.fernet import Fernet
+from .database_performance import DatabasePerformanceOptimizer
 
 logger = logging.getLogger(__name__)
 
@@ -57,17 +58,31 @@ class DatabaseEncryption:
 class ThinkingDatabase:
     """
     Lightweight SQLite database for local session storage
-    Implements zero-cost local persistence with encryption
+    Implements zero-cost local persistence with encryption and performance optimization
     """
 
     def __init__(
         self,
         db_path: str = "thinking_sessions.db",
         encryption_key: Optional[bytes] = None,
+        enable_performance_optimization: bool = True,
+        min_connections: int = 2,
+        max_connections: int = 10,
     ):
         self.db_path = Path(db_path) if db_path != ":memory:" else db_path
         self.encryption = DatabaseEncryption(encryption_key) if encryption_key else None
         self._memory_conn = None  # For persistent in-memory connections
+        
+        # Initialize performance optimizer
+        self.performance_optimizer = None
+        if enable_performance_optimization and self.db_path != ":memory:":
+            # Performance optimization only works with file databases
+            # In-memory databases don't benefit from connection pooling
+            db_path_str = str(self.db_path)
+            self.performance_optimizer = DatabasePerformanceOptimizer(
+                db_path_str, min_connections, max_connections
+            )
+        
         self._init_database()
 
     def _init_database(self):
@@ -86,6 +101,11 @@ class ThinkingDatabase:
 
                 # Create tables
                 self._create_tables(conn)
+                
+                # Initialize performance optimizations after tables are created
+                if self.performance_optimizer:
+                    self.performance_optimizer.initialize_after_tables_created()
+                
                 logger.info("Database initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
@@ -211,28 +231,34 @@ class ThinkingDatabase:
 
     @contextmanager
     def get_connection(self):
-        """Get database connection with proper cleanup"""
-        if self.db_path == ":memory:":
-            # For in-memory databases, maintain a persistent connection
-            if self._memory_conn is None:
-                self._memory_conn = sqlite3.connect(":memory:")
-                self._memory_conn.row_factory = sqlite3.Row
-                # Enable foreign keys for in-memory connection
-                self._memory_conn.execute("PRAGMA foreign_keys=ON")
-            yield self._memory_conn
-        else:
-            # For file databases, create new connections
-            db_path = (
-                self.db_path if isinstance(self.db_path, str) else str(self.db_path)
-            )
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row  # Enable dict-like access
-            # Enable foreign keys for each connection
-            conn.execute("PRAGMA foreign_keys=ON")
-            try:
+        """Get database connection with proper cleanup and performance optimization"""
+        if self.performance_optimizer:
+            # Use performance-optimized connection pool
+            with self.performance_optimizer.get_connection() as conn:
                 yield conn
-            finally:
-                conn.close()
+        else:
+            # Fallback to original connection management
+            if self.db_path == ":memory:":
+                # For in-memory databases, maintain a persistent connection
+                if self._memory_conn is None:
+                    self._memory_conn = sqlite3.connect(":memory:")
+                    self._memory_conn.row_factory = sqlite3.Row
+                    # Enable foreign keys for in-memory connection
+                    self._memory_conn.execute("PRAGMA foreign_keys=ON")
+                yield self._memory_conn
+            else:
+                # For file databases, create new connections
+                db_path = (
+                    self.db_path if isinstance(self.db_path, str) else str(self.db_path)
+                )
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row  # Enable dict-like access
+                # Enable foreign keys for each connection
+                conn.execute("PRAGMA foreign_keys=ON")
+                try:
+                    yield conn
+                finally:
+                    conn.close()
 
     def _encrypt_if_enabled(self, data: str) -> str:
         """Encrypt data if encryption is enabled"""
@@ -649,9 +675,12 @@ class ThinkingDatabase:
                 stats["total_results"] = cursor.fetchone()[0]
 
                 # Database size
-                stats["db_size_bytes"] = (
-                    self.db_path.stat().st_size if self.db_path.exists() else 0
-                )
+                if self.db_path != ":memory:":
+                    stats["db_size_bytes"] = (
+                        self.db_path.stat().st_size if self.db_path.exists() else 0
+                    )
+                else:
+                    stats["db_size_bytes"] = 0
 
                 # Encryption status
                 stats["encryption_enabled"] = self.encryption is not None
@@ -735,6 +764,92 @@ class ThinkingDatabase:
         except Exception as e:
             logger.error(f"Error exporting session {session_id}: {e}")
             return None
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """
+        Get comprehensive database performance metrics
+        
+        Returns:
+            Dictionary with performance metrics
+        """
+        metrics = {
+            "database_info": {
+                "db_path": str(self.db_path),
+                "encryption_enabled": self.encryption is not None,
+                "performance_optimization_enabled": self.performance_optimizer is not None
+            }
+        }
+        
+        # Add performance optimizer metrics if available
+        if self.performance_optimizer:
+            optimizer_metrics = self.performance_optimizer.get_performance_metrics()
+            metrics.update(optimizer_metrics)
+        
+        # Add basic database stats
+        try:
+            basic_stats = self.get_database_stats()
+            metrics["basic_stats"] = basic_stats
+        except Exception as e:
+            logger.error(f"Error getting basic database stats: {e}")
+            metrics["basic_stats"] = {}
+        
+        return metrics
+    
+    def optimize_database_performance(self):
+        """Optimize database performance"""
+        if self.performance_optimizer:
+            try:
+                self.performance_optimizer.optimize_database()
+                logger.info("Database performance optimization completed")
+            except Exception as e:
+                logger.error(f"Error during database optimization: {e}")
+        else:
+            logger.warning("Performance optimizer not enabled")
+    
+    def analyze_performance(self):
+        """Analyze database performance and suggest optimizations"""
+        if self.performance_optimizer:
+            try:
+                self.performance_optimizer.analyze_database_performance()
+                logger.info("Database performance analysis completed")
+            except Exception as e:
+                logger.error(f"Error during performance analysis: {e}")
+        else:
+            logger.warning("Performance optimizer not enabled")
+    
+    def execute_optimized_query(self, query: str, params: tuple = ()) -> sqlite3.Cursor:
+        """
+        Execute query with performance optimization and monitoring
+        
+        Args:
+            query: SQL query to execute
+            params: Query parameters
+            
+        Returns:
+            Query cursor
+        """
+        if self.performance_optimizer:
+            return self.performance_optimizer.execute_query(query, params)
+        else:
+            # Fallback to regular execution
+            with self.get_connection() as conn:
+                return conn.execute(query, params)
+    
+    def shutdown(self):
+        """Shutdown the database and cleanup resources"""
+        try:
+            # Close memory connection if exists
+            if self._memory_conn:
+                self._memory_conn.close()
+                self._memory_conn = None
+            
+            # Shutdown performance optimizer
+            if self.performance_optimizer:
+                self.performance_optimizer.shutdown()
+            
+            logger.info("Database shutdown complete")
+        except Exception as e:
+            logger.error(f"Error during database shutdown: {e}")
 
     def backup_database(self, backup_path: str) -> bool:
         """

@@ -2,6 +2,7 @@
 Template Manager for Deep Thinking Engine
 
 Provides dynamic loading, caching, and version management for templates.
+Enhanced with performance optimization features.
 """
 
 import json
@@ -19,6 +20,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from .parameter_replacer import ParameterReplacer, ParameterConfig, ReplacementContext, ParameterValidationError
+from .performance_optimizer import TemplatePerformanceOptimizer
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +89,7 @@ class TemplateFileHandler(FileSystemEventHandler):
 class TemplateManager:
     """Advanced template manager with dynamic loading, caching, and version management"""
 
-    def __init__(self, templates_dir: str = "templates"):
+    def __init__(self, templates_dir: str = "templates", enable_performance_optimization: bool = True):
         self.templates_dir = Path(templates_dir)
         self.cache: Dict[str, str] = {}
         self.metadata: Dict[str, Dict[str, Any]] = {}
@@ -106,8 +108,25 @@ class TemplateManager:
         self.versions_dir = self.templates_dir / "versions"
         self.versions_dir.mkdir(exist_ok=True)
         
+        # Initialize performance optimizer
+        self.performance_optimizer = None
+        if enable_performance_optimization:
+            self.performance_optimizer = TemplatePerformanceOptimizer(
+                self.templates_dir,
+                cache_size=100,
+                cache_memory_mb=50
+            )
+        
         # Initialize built-in templates
         self._create_builtin_templates()
+        
+        # Preload high-priority templates if optimizer is enabled
+        if self.performance_optimizer:
+            try:
+                self.performance_optimizer.preload_high_priority_templates()
+                logger.info("High-priority templates preloaded successfully")
+            except Exception as e:
+                logger.warning(f"Failed to preload templates: {e}")
 
     def _setup_parameter_configs(self):
         """Setup parameter configurations for common template parameters"""
@@ -900,44 +919,59 @@ class TemplateManager:
         if params is None:
             params = {}
 
-        with self.lock:
-            # Always check for file changes if hot reload is enabled
-            if self.hot_reload_enabled and name in self.cache:
-                template_path = self.templates_dir / f"{name}.tmpl"
-                if template_path.exists():
-                    # Check if file was modified since last load
-                    last_modified = template_path.stat().st_mtime
-                    last_loaded = self.metadata.get(name, {}).get("last_loaded_time", 0)
-                    if last_modified > last_loaded:
-                        self.reload_template(name)
-            
-            # Try to load from file if not in cache
-            if name not in self.cache:
-                self._load_template_from_file(name)
-            
-            # If still not found, handle according to flag
-            if name not in self.cache:
-                if use_default_if_missing:
-                    # Try to find a suitable fallback template
-                    fallback_template = self._get_fallback_template(name, params)
-                    if fallback_template:
-                        logger.warning(f"Using fallback template for missing template '{name}'")
-                        return fallback_template
-                    else:
-                        # Return generic template as last resort
-                        return self._generate_generic_template(name, params)
+        # Use performance optimizer if available
+        if self.performance_optimizer:
+            template = self.performance_optimizer.get_template(name, self._load_template_content)
+            if template is None and not use_default_if_missing:
+                raise ConfigurationError(f"Template '{name}' not found")
+            elif template is None and use_default_if_missing:
+                # Try fallback options
+                fallback_template = self._get_fallback_template(name, params)
+                if fallback_template:
+                    logger.warning(f"Using fallback template for missing template '{name}'")
+                    template = fallback_template
                 else:
-                    raise ConfigurationError(f"Template '{name}' not found")
+                    template = self._generate_generic_template(name, params)
+        else:
+            # Fallback to original implementation
+            with self.lock:
+                # Always check for file changes if hot reload is enabled
+                if self.hot_reload_enabled and name in self.cache:
+                    template_path = self.templates_dir / f"{name}.tmpl"
+                    if template_path.exists():
+                        # Check if file was modified since last load
+                        last_modified = template_path.stat().st_mtime
+                        last_loaded = self.metadata.get(name, {}).get("last_loaded_time", 0)
+                        if last_modified > last_loaded:
+                            self.reload_template(name)
+                
+                # Try to load from file if not in cache
+                if name not in self.cache:
+                    self._load_template_from_file(name)
+                
+                # If still not found, handle according to flag
+                if name not in self.cache:
+                    if use_default_if_missing:
+                        # Try to find a suitable fallback template
+                        fallback_template = self._get_fallback_template(name, params)
+                        if fallback_template:
+                            logger.warning(f"Using fallback template for missing template '{name}'")
+                            return fallback_template
+                        else:
+                            # Return generic template as last resort
+                            return self._generate_generic_template(name, params)
+                    else:
+                        raise ConfigurationError(f"Template '{name}' not found")
 
-            template = self.cache[name]
-            
-            # Update usage statistics
-            if name not in self.metadata:
-                self.metadata[name] = {"usage_count": 0}
-            
-            self.metadata[name]["usage_count"] = self.metadata[name].get("usage_count", 0) + 1
-            self.metadata[name]["last_used"] = datetime.now()
-            self.usage_stats[name] = self.usage_stats.get(name, 0) + 1
+                template = self.cache[name]
+                
+                # Update usage statistics
+                if name not in self.metadata:
+                    self.metadata[name] = {"usage_count": 0}
+                
+                self.metadata[name]["usage_count"] = self.metadata[name].get("usage_count", 0) + 1
+                self.metadata[name]["last_used"] = datetime.now()
+                self.usage_stats[name] = self.usage_stats.get(name, 0) + 1
 
         # Use the advanced parameter replacer
         try:
@@ -958,6 +992,26 @@ class TemplateManager:
             template = re.sub(r"{([^{}]+)}", r"[\1]", template)
             return template
     
+    def _load_template_content(self, name: str) -> Optional[str]:
+        """
+        Load template content for performance optimizer
+        
+        Args:
+            name: Template name
+            
+        Returns:
+            Template content or None if not found
+        """
+        # First try to load from cache
+        if name in self.cache:
+            return self.cache[name]
+        
+        # Try to load from file
+        if self._load_template_from_file(name):
+            return self.cache.get(name)
+        
+        return None
+
     def _load_template_from_file(self, name: str) -> bool:
         """
         Load a template from file
@@ -1736,3 +1790,93 @@ class TemplateManager:
                 logger.warning(f"Failed to repair template: {template_name}")
         
         return repair_results
+
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """
+        Get comprehensive performance metrics
+        
+        Returns:
+            Dictionary with performance metrics
+        """
+        metrics = {
+            "template_manager_stats": {
+                "total_templates": len(self.cache),
+                "templates_with_versions": len(self.versions),
+                "hot_reload_enabled": self.hot_reload_enabled,
+                "usage_stats": dict(self.usage_stats)
+            }
+        }
+        
+        # Add performance optimizer metrics if available
+        if self.performance_optimizer:
+            optimizer_metrics = self.performance_optimizer.get_performance_metrics()
+            metrics.update(optimizer_metrics)
+        
+        return metrics
+    
+    def optimize_performance(self):
+        """Optimize template performance"""
+        if self.performance_optimizer:
+            try:
+                # Run cache optimization
+                self.performance_optimizer.optimize_cache()
+                
+                # Preload high-priority templates
+                self.performance_optimizer.preload_high_priority_templates()
+                
+                logger.info("Template performance optimization completed")
+            except Exception as e:
+                logger.error(f"Error during performance optimization: {e}")
+        else:
+            logger.warning("Performance optimizer not enabled")
+    
+    def preload_templates(self, template_names: Optional[List[str]] = None) -> Dict[str, bool]:
+        """
+        Preload templates for better performance
+        
+        Args:
+            template_names: Specific templates to preload, or None for high-priority templates
+            
+        Returns:
+            Dict mapping template names to success status
+        """
+        if self.performance_optimizer:
+            if template_names is None:
+                return self.performance_optimizer.preload_high_priority_templates()
+            else:
+                return self.performance_optimizer.preloader.preload_templates(template_names)
+        else:
+            logger.warning("Performance optimizer not enabled")
+            return {}
+    
+    def clear_performance_cache(self):
+        """Clear performance cache"""
+        if self.performance_optimizer:
+            self.performance_optimizer.cache.clear()
+            logger.info("Performance cache cleared")
+        else:
+            logger.warning("Performance optimizer not enabled")
+    
+    def reset_performance_statistics(self):
+        """Reset performance statistics"""
+        if self.performance_optimizer:
+            self.performance_optimizer.reset_statistics()
+            logger.info("Performance statistics reset")
+        else:
+            logger.warning("Performance optimizer not enabled")
+    
+    def shutdown(self):
+        """Shutdown the template manager and cleanup resources"""
+        try:
+            # Stop hot reload monitoring
+            if self.observer and self.observer.is_alive():
+                self.observer.stop()
+                self.observer.join(timeout=5.0)
+            
+            # Shutdown performance optimizer
+            if self.performance_optimizer:
+                self.performance_optimizer.shutdown()
+            
+            logger.info("Template manager shutdown complete")
+        except Exception as e:
+            logger.error(f"Error during template manager shutdown: {e}")
