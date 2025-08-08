@@ -1,0 +1,68 @@
+# MCP Server Configuration for Deep Thinking Engine
+# This file configures the MCP server deployment settings
+
+server:
+  name: "deep-thinking-engine"
+  version: "0.1.0"
+  description: "Zero-cost local MCP server for systematic deep thinking"
+  
+  # Server runtime settings
+  runtime:
+    log_level: "INFO"
+    max_sessions: 100
+    session_timeout_minutes: 60
+    enable_debug: false
+    
+  # Performance settings
+  performance:
+    template_cache_size: 50
+    session_cache_size: 20
+    database_pool_size: 5
+    
+  # Security settings
+  security:
+    enable_input_validation: true
+    max_input_length: 10000
+    rate_limiting:
+      enabled: false  # Disabled for local use
+      requests_per_minute: 60
+
+# Database configuration
+database:
+  type: "sqlite"
+  path: "data/deep_thinking.db"
+  backup:
+    enabled: true
+    interval_hours: 24
+    max_backups: 7
+
+# Template configuration
+templates:
+  base_path: "templates"
+  cache_enabled: true
+  hot_reload: true
+  validation:
+    enabled: true
+    strict_mode: false
+
+# Flow configuration
+flows:
+  default_flow: "comprehensive_analysis"
+  enable_adaptive_flows: true
+  quality_gates:
+    enabled: true
+    default_threshold: 0.7
+    
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/mcp_server.log"
+  max_size_mb: 10
+  backup_count: 5
+
+# Development settings
+development:
+  enable_hot_reload: true
+  debug_mode: false
+  profiling: false

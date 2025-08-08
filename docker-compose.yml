@@ -1,0 +1,78 @@
+# Docker Compose configuration for Deep Thinking MCP Server
+version: '3.8'
+
+services:
+  deep-thinking-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: deep-thinking-mcp-server
+    restart: unless-stopped
+    
+    # Environment variables
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+    
+    # Volume mounts for persistent data
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+      - ./templates:/app/templates:ro
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.path.insert(0, 'src'); from mcps.deep_thinking.server import DeepThinkingMCPServer; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Database backup service
+  db-backup:
+    image: alpine:latest
+    container_name: deep-thinking-db-backup
+    restart: unless-stopped
+    
+    volumes:
+      - ./data:/data
+      - ./backups:/backups
+    
+    command: >
+      sh -c "
+        while true; do
+          echo 'Creating database backup...'
+          mkdir -p /backups
+          cp /data/deep_thinking.db /backups/deep_thinking_$(date +%Y%m%d_%H%M%S).db
+          # Keep only last 7 backups
+          ls -t /backups/deep_thinking_*.db | tail -n +8 | xargs -r rm
+          echo 'Backup completed'
+          sleep 86400  # 24 hours
+        done
+      "
+    
+    depends_on:
+      - deep-thinking-mcp
+
+networks:
+  default:
+    name: deep-thinking-network
