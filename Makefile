@@ -75,6 +75,36 @@ test-deep-thinking: ## Run deep thinking engine tests only
 	uv run pytest $(TEST_DIR)/deep_thinking/ -v
 	@echo "$(GREEN)✅ Deep thinking tests completed$(RESET)"
 
+test-integration: ## Run integration tests
+	@echo "$(BLUE)Running integration tests...$(RESET)"
+	uv run python $(TEST_DIR)/deep_thinking/test_integration_framework.py
+	@echo "$(GREEN)✅ Integration tests completed$(RESET)"
+
+test-integration-quick: ## Run quick integration tests
+	@echo "$(BLUE)Running quick integration tests...$(RESET)"
+	uv run python scripts/run_integration_tests.py --mode quick
+	@echo "$(GREEN)✅ Quick integration tests completed$(RESET)"
+
+test-integration-comprehensive: ## Run comprehensive integration tests
+	@echo "$(BLUE)Running comprehensive integration tests...$(RESET)"
+	uv run python scripts/run_integration_tests.py --mode comprehensive --output-format html
+	@echo "$(GREEN)✅ Comprehensive integration tests completed$(RESET)"
+
+test-integration-stress: ## Run stress integration tests
+	@echo "$(BLUE)Running stress integration tests...$(RESET)"
+	uv run python scripts/run_integration_tests.py --mode stress --output-format json
+	@echo "$(GREEN)✅ Stress integration tests completed$(RESET)"
+
+test-reliability: ## Run system reliability tests
+	@echo "$(BLUE)Running system reliability tests...$(RESET)"
+	uv run python $(TEST_DIR)/deep_thinking/test_system_reliability.py
+	@echo "$(GREEN)✅ System reliability tests completed$(RESET)"
+
+test-integration-suite: ## Run complete integration test suite
+	@echo "$(BLUE)Running complete integration test suite...$(RESET)"
+	uv run python $(TEST_DIR)/deep_thinking/test_integration_suite.py --output-dir integration_results
+	@echo "$(GREEN)✅ Complete integration test suite completed$(RESET)"
+
 lint-docs: ## Check documentation format
 	@echo "$(BLUE)Checking documentation format...$(RESET)"
 	@if command -v markdownlint >/dev/null 2>&1; then \

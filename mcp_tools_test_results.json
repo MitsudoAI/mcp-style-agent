@@ -1,0 +1,302 @@
+{
+  "test_results": {
+    "start_thinking": {
+      "passed": 3,
+      "failed": 0,
+      "test_details": [
+        {
+          "test_name": "basic_functionality",
+          "passed": true,
+          "response_time_ms": 0.0209808349609375,
+          "quality_score": 5.0,
+          "validation_details": {
+            "valid": true,
+            "issues": [],
+            "score": 10
+          },
+          "result_preview": {
+            "tool_name": "start_thinking",
+            "step": "decompose_problem",
+            "has_prompt": true,
+            "has_instructions": true
+          }
+        },
+        {
+          "test_name": "simple_complexity",
+          "passed": true,
+          "response_time_ms": 0.007152557373046875,
+          "quality_score": 5.0,
+          "validation_details": {
+            "valid": true,
+            "issues": [],
+            "score": 10
+          },
+          "result_preview": {
+            "tool_name": "start_thinking",
+            "step": "decompose_problem",
+            "has_prompt": true,
+            "has_instructions": true
+          }
+        },
+        {
+          "test_name": "complex_analysis",
+          "passed": true,
+          "response_time_ms": 0.005245208740234375,
+          "quality_score": 5.0,
+          "validation_details": {
+            "valid": true,
+            "issues": [],
+            "score": 10
+          },
+          "result_preview": {
+            "tool_name": "start_thinking",
+            "step": "decompose_problem",
+            "has_prompt": true,
+            "has_instructions": true
+          }
+        }
+      ]
+    },
+    "next_step": {
+      "passed": 3,
+      "failed": 0,
+      "test_details": [
+        {
+          "test_name": "after_decomposition",
+          "passed": true,
+          "response_time_ms": 0.0019073486328125,
+          "quality_score": 8.5,
+          "validation_details": {
+            "valid": true,
+            "issues": [],
+            "score": 10
+          },
+          "result_preview": {
+            "step": "collect_evidence",
+            "has_context": true,
+            "has_metadata": true
+          }
+        },
+        {
+          "test_name": "with_quality_feedback",
+          "passed": true,
+          "response_time_ms": 0.0021457672119140625,
+          "quality_score": 8.5,
+          "validation_details": {
+            "valid": true,
+            "issues": [],
+            "score": 10
+          },
+          "result_preview": {
+            "step": "collect_evidence",
+            "has_context": true,
+            "has_metadata": true
+          }
+        },
+        {
+          "test_name": "low_quality_handling",
+          "passed": true,
+          "response_time_ms": 0.0016689300537109375,
+          "quality_score": 8.5,
+          "validation_details": {
+            "valid": true,
+            "issues": [],
+            "score": 10
+          },
+          "result_preview": {
+            "step": "improve_current_step",
+            "has_context": true,
+            "has_metadata": true
+          }
+        }
+      ]
+    },
+    "analyze_step": {
+      "passed": 3,
+      "failed": 0,
+      "test_details": [
+        {
+          "test_name": "analyze_decomposition",
+          "passed": true,
+          "response_time_ms": 0.0021457672119140625,
+          "quality_score": 8.0,
+          "validation_details": {
+            "valid": true,
+            "issues": [],
+            "score": 10
+          }
+        },
+        {
+          "test_name": "analyze_evidence",
+          "passed": true,
+          "response_time_ms": 0.0016689300537109375,
+          "quality_score": 8.0,
+          "validation_details": {
+            "valid": true,
+            "issues": [],
+            "score": 10
+          }
+        },
+        {
+          "test_name": "format_validation_failure",
+          "passed": true,
+          "response_time_ms": 0.0019073486328125,
+          "quality_score": 8.0,
+          "validation_details": {
+            "valid": true,
+            "issues": [],
+            "score": 10
+          }
+        }
+      ]
+    },
+    "complete_thinking": {
+      "passed": 3,
+      "failed": 0,
+      "test_details": [
+        {
+          "test_name": "basic_completion",
+          "passed": true,
+          "response_time_ms": 0.0019073486328125,
+          "quality_score": 9.0,
+          "validation_details": {
+            "valid": true,
+            "issues": [],
+            "score": 10
+          }
+        },
+        {
+          "test_name": "completion_with_insights",
+          "passed": true,
+          "response_time_ms": 0.0019073486328125,
+          "quality_score": 9.0,
+          "validation_details": {
+            "valid": true,
+            "issues": [],
+            "score": 10
+          }
+        },
+        {
+          "test_name": "nonexistent_session",
+          "passed": true,
+          "response_time_ms": 0.0019073486328125,
+          "quality_score": 9.0,
+          "validation_details": {
+            "valid": true,
+            "issues": [],
+            "score": 10
+          }
+        }
+      ]
+    }
+  },
+  "performance_metrics": {},
+  "quality_scores": {},
+  "coverage_data": {},
+  "summary_report": {
+    "total_tests": 12,
+    "passed_tests": 12,
+    "failed_tests": 0,
+    "success_rate": 100.0,
+    "avg_response_time": 0.0042120615641276045,
+    "avg_quality_score": 7.625,
+    "test_coverage": {
+      "tools_coverage": 1.0,
+      "coverage_by_tool": {
+        "start_thinking": {
+          "test_cases": 3,
+          "passed": 3,
+          "coverage_score": 1.0
+        },
+        "next_step": {
+          "test_cases": 3,
+          "passed": 3,
+          "coverage_score": 1.0
+        },
+        "analyze_step": {
+          "test_cases": 3,
+          "passed": 3,
+          "coverage_score": 1.0
+        },
+        "complete_thinking": {
+          "test_cases": 3,
+          "passed": 3,
+          "coverage_score": 1.0
+        }
+      },
+      "overall_coverage_score": 1.0
+    },
+    "performance_summary": {
+      "start_thinking": {
+        "avg_response_time": 0.011126200358072916,
+        "min_response_time": 0.005245208740234375,
+        "max_response_time": 0.0209808349609375,
+        "total_tests": 3
+      },
+      "next_step": {
+        "avg_response_time": 0.0019073486328125,
+        "min_response_time": 0.0016689300537109375,
+        "max_response_time": 0.0021457672119140625,
+        "total_tests": 3
+      },
+      "analyze_step": {
+        "avg_response_time": 0.0019073486328125,
+        "min_response_time": 0.0016689300537109375,
+        "max_response_time": 0.0021457672119140625,
+        "total_tests": 3
+      },
+      "complete_thinking": {
+        "avg_response_time": 0.0019073486328125,
+        "min_response_time": 0.0019073486328125,
+        "max_response_time": 0.0019073486328125,
+        "total_tests": 3
+      }
+    },
+    "quality_summary": {
+      "start_thinking": {
+        "avg_quality": 5.0,
+        "min_quality": 5.0,
+        "max_quality": 5.0,
+        "quality_distribution": {
+          "excellent": 0,
+          "good": 0,
+          "acceptable": 3,
+          "poor": 0
+        }
+      },
+      "next_step": {
+        "avg_quality": 8.5,
+        "min_quality": 8.5,
+        "max_quality": 8.5,
+        "quality_distribution": {
+          "excellent": 0,
+          "good": 3,
+          "acceptable": 0,
+          "poor": 0
+        }
+      },
+      "analyze_step": {
+        "avg_quality": 8.0,
+        "min_quality": 8.0,
+        "max_quality": 8.0,
+        "quality_distribution": {
+          "excellent": 0,
+          "good": 3,
+          "acceptable": 0,
+          "poor": 0
+        }
+      },
+      "complete_thinking": {
+        "avg_quality": 9.0,
+        "min_quality": 9.0,
+        "max_quality": 9.0,
+        "quality_distribution": {
+          "excellent": 3,
+          "good": 0,
+          "acceptable": 0,
+          "poor": 0
+        }
+      }
+    }
+  }
+}
