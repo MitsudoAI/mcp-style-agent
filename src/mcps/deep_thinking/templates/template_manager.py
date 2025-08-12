@@ -117,7 +117,10 @@ class TemplateManager:
                 cache_memory_mb=50
             )
         
-        # Initialize built-in templates
+        # Scan for existing template files first
+        self._scan_template_files()
+        
+        # Initialize built-in templates (only if they don't exist)
         self._create_builtin_templates()
         
         # Preload high-priority templates if optimizer is enabled
@@ -828,9 +831,11 @@ class TemplateManager:
 请开始系统性证据收集："""
         }
 
-        # Save built-in templates to files and add to cache
+        # Save built-in templates to files and add to cache (only if they don't exist)
         for name, content in templates.items():
-            self.add_template(name, content, save_to_file=True)
+            # Only add if template doesn't already exist in cache (from file scan)
+            if name not in self.cache:
+                self.add_template(name, content, save_to_file=True)
 
     def add_template(self, name: str, template_content: str, save_to_file: bool = True):
         """
