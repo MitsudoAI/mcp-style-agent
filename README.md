@@ -52,6 +52,41 @@ uv run deep-thinking init
 uv run deep-thinking think "How can we solve climate change effectively?"
 ```
 
+## MCP Server Deployment
+
+The Deep Thinking Engine can be deployed as an MCP server for integration with MCP-compatible hosts like Cursor and Claude Desktop.
+
+### Using uvx (Recommended)
+
+```json
+{
+  "mcpServers": {
+    "deep-thinking-engine": {
+      "command": "uvx",
+      "args": ["--from", "/path/to/mcp-style-agent", "deep-thinking-mcp-server"],
+      "env": {
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+### Test Deployment
+
+```bash
+# Test uvx deployment
+make test-uvx
+
+# Start MCP server locally
+make mcp-server
+
+# Validate configuration
+make mcp-server-validate
+```
+
+For detailed deployment instructions, see [docs/deployment/README.md](docs/deployment/README.md).
+
 ## Development
 
 ```bash

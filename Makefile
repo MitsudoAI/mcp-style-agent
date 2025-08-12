@@ -105,6 +105,11 @@ test-integration-suite: ## Run complete integration test suite
 	uv run python $(TEST_DIR)/deep_thinking/test_integration_suite.py --output-dir integration_results
 	@echo "$(GREEN)✅ Complete integration test suite completed$(RESET)"
 
+test-uvx: ## Test uvx deployment
+	@echo "$(BLUE)Testing uvx deployment...$(RESET)"
+	uv run python scripts/test_uvx_deployment.py
+	@echo "$(GREEN)✅ uvx deployment test completed$(RESET)"
+
 lint-docs: ## Check documentation format
 	@echo "$(BLUE)Checking documentation format...$(RESET)"
 	@if command -v markdownlint >/dev/null 2>&1; then \
@@ -131,8 +136,21 @@ fix: format fix-docs ## Fix all formatting issues
 
 server: ## Start MCP server for testing
 	@echo "$(BLUE)Starting MCP server for testing...$(RESET)"
-	@echo "$(YELLOW)Note: MCP server implementation in progress$(RESET)"
-	uv run deep-thinking --help
+	uv run deep-thinking-mcp-server --help
+
+mcp-server: ## Start MCP server
+	@echo "$(BLUE)Starting Deep Thinking MCP Server...$(RESET)"
+	@echo "$(YELLOW)Press Ctrl+C to stop the server$(RESET)"
+	uv run deep-thinking-mcp-server
+
+mcp-server-debug: ## Start MCP server in debug mode
+	@echo "$(BLUE)Starting MCP server in debug mode...$(RESET)"
+	uv run deep-thinking-mcp-server --log-level DEBUG --log-file logs/mcp_debug.log
+
+mcp-server-validate: ## Validate MCP server configuration
+	@echo "$(BLUE)Validating MCP server configuration...$(RESET)"
+	uv run deep-thinking-mcp-server --validate-only
+	@echo "$(GREEN)✅ MCP server configuration is valid$(RESET)"
 
 demo: ## Run demo examples
 	@echo "$(BLUE)Running demo examples...$(RESET)"

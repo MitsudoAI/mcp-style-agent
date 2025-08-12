@@ -267,16 +267,133 @@ class DeepThinkingMCPServer:
             )
 
 
-async def main():
-    """Main entry point for the MCP server"""
-    try:
-        server = DeepThinkingMCPServer()
-        await server.run()
-    except KeyboardInterrupt:
-        logger.info("Server stopped by user")
-    except Exception as e:
-        logger.error(f"Server error: {e}")
-        raise
+def setup_logging(log_level: str = "INFO", log_file: str = None):
+    """Setup logging configuration"""
+    import sys
+    from pathlib import Path
+    
+    level = getattr(logging, log_level.upper(), logging.INFO)
+    
+    # Create logs directory if it doesn't exist
+    if log_file:
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Configure logging
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler(log_file) if log_file else logging.NullHandler()
+        ]
+    )
+
+
+def ensure_directories():
+    """Ensure required directories exist"""
+    from pathlib import Path
+    
+    directories = ["data", "logs", "config", "templates"]
+    for directory in directories:
+        Path(directory).mkdir(parents=True, exist_ok=True)
+
+
+def validate_environment():
+    """Validate the environment before starting the server"""
+    import sys
+    from pathlib import Path
+    
+    # Check Python version
+    if sys.version_info < (3, 8):
+        print("Error: Python 3.8 or higher is required")
+        sys.exit(1)
+    
+    # Check required directories
+    ensure_directories()
+    
+    # Check if config file exists
+    config_file = Path("config/mcp_server.yaml")
+    if not config_file.exists():
+        logger.info(f"Config file {config_file} not found, using defaults")
+
+
+def main():
+    """Main entry point for the MCP server with CLI argument support"""
+    import argparse
+    import sys
+    
+    parser = argparse.ArgumentParser(
+        description="Deep Thinking MCP Server",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  deep-thinking-mcp-server
+  deep-thinking-mcp-server --config config/custom.yaml
+  deep-thinking-mcp-server --log-level DEBUG --log-file logs/debug.log
+        """
+    )
+    
+    parser.add_argument(
+        "--config", "-c",
+        type=str,
+        help="Path to configuration file"
+    )
+    
+    parser.add_argument(
+        "--log-level", "-l",
+        type=str,
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging level"
+    )
+    
+    parser.add_argument(
+        "--log-file", "-f",
+        type=str,
+        default="logs/mcp_server.log",
+        help="Log file path"
+    )
+    
+    parser.add_argument(
+        "--validate-only", "-v",
+        action="store_true",
+        help="Only validate configuration and exit"
+    )
+    
+    args = parser.parse_args()
+    
+    # Setup logging
+    setup_logging(args.log_level, args.log_file)
+    
+    async def run_server():
+        try:
+            # Validate environment
+            validate_environment()
+            logger.info("Environment validation passed")
+            
+            if args.validate_only:
+                logger.info("Validation complete, exiting")
+                return
+            
+            # Initialize and start server
+            logger.info("Initializing Deep Thinking MCP Server...")
+            server = DeepThinkingMCPServer(config_path=args.config)
+            
+            logger.info("Starting MCP Server...")
+            logger.info("Server is ready to accept connections via stdio")
+            logger.info("Press Ctrl+C to stop the server")
+            
+            await server.run()
+            
+        except KeyboardInterrupt:
+            logger.info("Server stopped by user")
+        except Exception as e:
+            logger.error(f"Server startup failed: {e}")
+            sys.exit(1)
+    
+    # Run the async server
+    asyncio.run(run_server())
 
 
 if __name__ == "__main__":

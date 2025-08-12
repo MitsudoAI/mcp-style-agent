@@ -92,6 +92,9 @@ docker-compose down
 本地部署适合开发和调试环境。
 
 #### 使用uv（推荐）
+
+uv是现代Python包管理器，提供更快的依赖解析和虚拟环境管理。
+
 ```bash
 # 安装uv
 pip install uv
@@ -100,7 +103,22 @@ pip install uv
 uv sync
 
 # 启动服务器
-python scripts/start_mcp_server.py
+uv run python scripts/start_mcp_server.py
+```
+
+**为什么使用 `uv run`？**
+- 自动管理项目虚拟环境
+- 确保使用正确的Python版本和依赖
+- 无需手动激活虚拟环境
+- 更好的依赖隔离和版本管理
+
+**项目CLI命令**：
+```bash
+# 使用项目定义的CLI命令
+uv run deep-thinking --help
+
+# 或直接运行脚本
+uv run python scripts/start_mcp_server.py
 ```
 
 #### 使用pip
@@ -161,7 +179,7 @@ flows:
 ### 启动参数
 
 ```bash
-python scripts/start_mcp_server.py [OPTIONS]
+uv run python scripts/start_mcp_server.py [OPTIONS]
 
 选项:
   -c, --config PATH     配置文件路径
@@ -172,20 +190,79 @@ python scripts/start_mcp_server.py [OPTIONS]
 
 ## MCP客户端配置
 
-### Cursor配置
+### 使用 uvx 部署（推荐）
 
-在Cursor中配置MCP服务器：
+`uvx` 是最符合 MCP 客户端最佳实践的部署方式，提供更好的依赖隔离和版本管理。
 
-1. 打开Cursor设置
-2. 找到MCP配置部分
-3. 添加服务器配置：
+#### 方式1: 使用已发布的包（推荐）
+
+如果项目已发布到 PyPI：
 
 ```json
 {
   "mcpServers": {
     "deep-thinking-engine": {
-      "command": "python",
-      "args": ["scripts/start_mcp_server.py"],
+      "command": "uvx",
+      "args": ["--from", "mcp-style-agent", "deep-thinking-mcp-server"],
+      "env": {
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+#### 方式2: 使用本地项目路径
+
+对于本地开发或未发布的版本：
+
+```json
+{
+  "mcpServers": {
+    "deep-thinking-engine": {
+      "command": "uvx",
+      "args": ["--from", "/path/to/mcp-style-agent", "deep-thinking-mcp-server"],
+      "env": {
+        "LOG_LEVEL": "INFO",
+        "DATA_DIR": "/path/to/mcp-style-agent/data"
+      }
+    }
+  }
+}
+```
+
+**注意**: 使用 `deep-thinking-mcp-server` 命令而不是 `deep-thinking`，这是专门为 MCP 服务器设计的入口点。
+
+#### 方式3: 使用 Git 仓库
+
+直接从 Git 仓库安装：
+
+```json
+{
+  "mcpServers": {
+    "deep-thinking-engine": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/your-org/mcp-style-agent.git", "deep-thinking-mcp-server"],
+      "env": {
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+### 传统 uv run 方式
+
+如果需要使用传统方式或进行开发调试：
+
+#### Cursor配置
+
+```json
+{
+  "mcpServers": {
+    "deep-thinking-engine": {
+      "command": "uv",
+      "args": ["run", "python", "scripts/start_mcp_server.py"],
       "cwd": "/path/to/mcp-style-agent",
       "env": {
         "LOG_LEVEL": "INFO"
@@ -195,16 +272,111 @@ python scripts/start_mcp_server.py [OPTIONS]
 }
 ```
 
-### Claude Desktop配置
+#### Claude Desktop配置
 
 ```json
 {
   "mcpServers": {
     "deep-thinking-engine": {
-      "command": "python",
-      "args": ["/path/to/mcp-style-agent/scripts/start_mcp_server.py"],
+      "command": "uv",
+      "args": ["run", "python", "/path/to/mcp-style-agent/scripts/start_mcp_server.py"],
+      "cwd": "/path/to/mcp-style-agent",
       "env": {
         "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+### 配置说明
+
+**uvx 的优势**：
+- 自动管理虚拟环境和依赖
+- 更好的版本隔离
+- 符合 MCP 客户端最佳实践
+- 支持从多种源安装（PyPI、Git、本地路径）
+- 无需手动管理项目路径
+
+**环境变量**：
+- `LOG_LEVEL`: 日志级别（DEBUG、INFO、WARNING、ERROR）
+- `DATA_DIR`: 数据目录路径（仅本地路径方式需要）
+- `CONFIG_PATH`: 自定义配置文件路径
+
+**路径配置**：
+- 使用绝对路径确保配置的可靠性
+- 本地路径方式需要指定 `DATA_DIR` 环境变量
+- Git 和 PyPI 方式会自动处理数据目录
+
+### 完整配置示例
+
+#### 生产环境配置（推荐）
+
+适用于稳定的生产环境，使用已发布的包：
+
+```json
+{
+  "mcpServers": {
+    "deep-thinking-engine": {
+      "command": "uvx",
+      "args": ["--from", "mcp-style-agent", "deep-thinking-mcp-server"],
+      "env": {
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+#### 开发环境配置
+
+适用于本地开发和测试：
+
+```json
+{
+  "mcpServers": {
+    "deep-thinking-engine": {
+      "command": "uvx",
+      "args": [
+        "--from", "/Users/username/projects/mcp-style-agent", 
+        "deep-thinking-mcp-server",
+        "--log-level", "DEBUG",
+        "--log-file", "logs/mcp_debug.log"
+      ],
+      "env": {
+        "LOG_LEVEL": "DEBUG",
+        "DATA_DIR": "/Users/username/projects/mcp-style-agent/data"
+      }
+    }
+  }
+}
+```
+
+#### 多实例配置
+
+运行多个不同配置的实例：
+
+```json
+{
+  "mcpServers": {
+    "deep-thinking-main": {
+      "command": "uvx",
+      "args": ["--from", "mcp-style-agent", "deep-thinking-mcp-server"],
+      "env": {
+        "LOG_LEVEL": "INFO",
+        "CONFIG_PATH": "config/production.yaml"
+      }
+    },
+    "deep-thinking-debug": {
+      "command": "uvx",
+      "args": [
+        "--from", "/path/to/local/mcp-style-agent", 
+        "deep-thinking-mcp-server",
+        "--log-level", "DEBUG"
+      ],
+      "env": {
+        "LOG_LEVEL": "DEBUG",
+        "DATA_DIR": "/path/to/local/mcp-style-agent/debug_data"
       }
     }
   }
@@ -221,7 +393,7 @@ docker-compose ps
 docker-compose exec deep-thinking-mcp python -c "from mcps.deep_thinking.server import DeepThinkingMCPServer; print('OK')"
 
 # 本地环境
-python -c "from src.mcps.deep_thinking.server import DeepThinkingMCPServer; print('OK')"
+uv run python -c "from mcps.deep_thinking.server import DeepThinkingMCPServer; print('OK')"
 ```
 
 ### 日志管理
@@ -260,6 +432,83 @@ docker-compose up db-backup
 sqlite3 data/deep_thinking.db "DELETE FROM thinking_sessions WHERE start_time < datetime('now', '-30 days');"
 ```
 
+## 测试和验证
+
+### 测试 uvx 部署
+
+项目提供了专门的测试脚本来验证 uvx 部署是否正常工作：
+
+```bash
+# 运行 uvx 部署测试
+make test-uvx
+
+# 或直接运行测试脚本
+uv run python scripts/test_uvx_deployment.py
+```
+
+测试脚本会验证：
+- uvx 是否正确安装
+- 包是否可以通过 uvx 安装和执行
+- MCP server 是否可以正常启动
+- 生成示例配置文件
+
+**成功的测试输出示例**：
+```
+🧪 Testing uvx deployment for Deep Thinking MCP Server
+============================================================
+
+🔍 Testing uvx Installation...
+✅ uvx is installed: uv-tool-uvx 0.6.14
+
+🔍 Testing Package Installation...
+✅ Package can be installed and executed via uvx
+
+🔍 Testing MCP Server Startup...
+✅ MCP server validation passed
+
+📊 Test Results Summary:
+==============================
+✅ PASS uvx Installation
+✅ PASS Package Installation
+✅ PASS MCP Server Startup
+
+Passed: 3/3 tests
+
+🎉 All tests passed! uvx deployment is ready.
+```
+
+### 验证 MCP server
+
+```bash
+# 验证服务器配置
+make mcp-server-validate
+
+# 或直接验证
+uv run deep-thinking-mcp-server --validate-only
+```
+
+### 本地测试
+
+```bash
+# 启动 MCP server（开发模式）
+make mcp-server-debug
+
+# 或使用 uvx（推荐）
+uvx --from . deep-thinking-mcp-server --log-level DEBUG
+```
+
+### 配置验证
+
+在配置 MCP 客户端之前，建议先验证配置：
+
+```bash
+# 测试本地路径配置
+uvx --from /path/to/mcp-style-agent deep-thinking-mcp-server --validate-only
+
+# 测试 Git 仓库配置（如果可用）
+uvx --from git+https://github.com/your-org/mcp-style-agent.git deep-thinking-mcp-server --validate-only
+```
+
 ## 故障排除
 
 ### 常见问题
@@ -267,13 +516,13 @@ sqlite3 data/deep_thinking.db "DELETE FROM thinking_sessions WHERE start_time < 
 #### 1. 服务器启动失败
 ```bash
 # 检查Python版本
-python --version
+uv run python --version
 
 # 检查依赖
-pip list | grep mcp
+uv run pip list | grep mcp
 
 # 验证配置
-python scripts/start_mcp_server.py --validate-only
+uv run python scripts/start_mcp_server.py --validate-only
 ```
 
 #### 2. 数据库连接错误
@@ -283,7 +532,7 @@ ls -la data/
 
 # 重新初始化数据库
 rm data/deep_thinking.db
-python scripts/start_mcp_server.py --validate-only
+uv run python scripts/start_mcp_server.py --validate-only
 ```
 
 #### 3. 模板加载失败
@@ -292,7 +541,7 @@ python scripts/start_mcp_server.py --validate-only
 ls -la templates/
 
 # 验证模板格式
-python -c "from src.mcps.deep_thinking.templates.template_manager import TemplateManager; tm = TemplateManager(); print('Templates OK')"
+uv run python -c "from mcps.deep_thinking.templates.template_manager import TemplateManager; tm = TemplateManager(); print('Templates OK')"
 ```
 
 #### 4. Docker容器问题
@@ -305,6 +554,58 @@ docker-compose logs deep-thinking-mcp
 
 # 重启容器
 docker-compose restart deep-thinking-mcp
+```
+
+#### 5. uvx 部署问题
+
+**uvx 未安装**:
+```bash
+# 检查 uv 和 uvx 是否安装
+uv --version
+uvx --version
+
+# 安装 uv（如果未安装）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# 或使用 pip
+pip install uv
+```
+
+**包安装失败**:
+```bash
+# 清理 uvx 缓存
+uvx --refresh deep-thinking-mcp-server --help
+
+# 使用详细输出查看错误
+uvx --verbose --from /path/to/project deep-thinking-mcp-server --help
+
+# 检查项目结构
+ls -la /path/to/project/pyproject.toml
+```
+
+**权限问题**:
+```bash
+# 检查目录权限
+ls -la /path/to/project
+chmod -R 755 /path/to/project
+
+# 检查数据目录权限
+mkdir -p data logs
+chmod -R 755 data logs
+```
+
+**环境变量问题**:
+```bash
+# 验证环境变量
+echo $DATA_DIR
+echo $LOG_LEVEL
+
+# 在 MCP 配置中明确设置路径
+{
+  "env": {
+    "DATA_DIR": "/absolute/path/to/data",
+    "LOG_LEVEL": "INFO"
+  }
+}
 ```
 
 ### 性能优化
