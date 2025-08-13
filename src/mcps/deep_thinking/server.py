@@ -48,11 +48,32 @@ class DeepThinkingMCPServer:
         
         # Initialize core components
         try:
-            # Get the project root directory (where this package is installed)
-            import mcps.deep_thinking
-            project_root = Path(mcps.deep_thinking.__file__).parent.parent.parent.parent
-            templates_path = project_root / "templates"
+            # Get the templates directory - try multiple locations
+            templates_path = None
             
+            # Method 1: Try relative to package installation (for uvx --from)
+            import mcps.deep_thinking
+            package_dir = Path(mcps.deep_thinking.__file__).parent
+            
+            # Check several possible locations
+            candidate_paths = [
+                # In packaged installation, templates should be at the same level as site-packages
+                package_dir.parent.parent.parent / "templates",  # uvx installation
+                package_dir.parent.parent / "templates",  # pip installation
+                # For development mode, check project root
+                Path.cwd() / "templates",  # current working directory
+                Path(__file__).parent.parent.parent.parent / "templates",  # relative to this file
+            ]
+            
+            for candidate in candidate_paths:
+                if candidate.exists() and (candidate / "comprehensive_evidence_collection.tmpl").exists():
+                    templates_path = candidate
+                    break
+            
+            if not templates_path:
+                # Fallback to default relative path
+                templates_path = Path("templates")
+                
             self.config_manager = ConfigManager(config_path)
             self.session_manager = SessionManager()
             self.template_manager = TemplateManager(str(templates_path))
