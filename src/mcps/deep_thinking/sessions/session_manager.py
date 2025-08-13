@@ -1054,20 +1054,17 @@ class SessionManager:
             }
 
             # Create session in database
-            db_session_id = self.db.create_session(
-                user_id="recovered_user",
+            success = self.db.create_session(
+                session_id=session_id,
                 topic=session_state.topic,
                 session_type=session_state.flow_type,
+                user_id="recovered_user",
                 configuration=configuration,
             )
 
-            if not db_session_id:
+            if not success:
                 logger.error(f"Failed to create recovered session in database")
                 return False
-
-            # Update session ID if database generated a different one
-            if db_session_id != session_id:
-                session_state.session_id = db_session_id
 
             # Add recovered steps to database
             for step_name in completed_steps:
