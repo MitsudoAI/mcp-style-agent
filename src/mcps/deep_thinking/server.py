@@ -8,6 +8,7 @@ that exposes the deep thinking tools to MCP-compatible hosts like Cursor.
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from mcp import McpError, Tool
@@ -47,9 +48,14 @@ class DeepThinkingMCPServer:
         
         # Initialize core components
         try:
+            # Get the project root directory (where this package is installed)
+            import mcps.deep_thinking
+            project_root = Path(mcps.deep_thinking.__file__).parent.parent.parent.parent
+            templates_path = project_root / "templates"
+            
             self.config_manager = ConfigManager(config_path)
             self.session_manager = SessionManager()
-            self.template_manager = TemplateManager()
+            self.template_manager = TemplateManager(str(templates_path))
             self.flow_manager = FlowManager()
             self.mcp_tools = MCPTools(
                 self.session_manager,
