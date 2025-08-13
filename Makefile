@@ -33,12 +33,12 @@ dev-install: ## Install development dependencies
 	@echo "$(GREEN)✅ Development dependencies installed successfully$(RESET)"
 
 refresh-uvx: ## Refresh UVX cache (local development)
-	@echo "$(BLUE)Refreshing UVX cache for local development...$(RESET)"
-	uvx --refresh deep-thinking --help || echo "$(YELLOW)⚠️  UVX refresh completed$(RESET)"
+	@echo "$(BLUE)🔄 Refreshing UVX cache (local development)...$(RESET)"
+	uvx --refresh-package $(PROJECT_NAME) --from . python -c "print('$(GREEN)✅ UVX cache refreshed$(RESET)')"
 
 refresh-uvx-pypi: ## Refresh UVX cache (PyPI installation)
-	@echo "$(BLUE)Refreshing UVX cache for PyPI installation...$(RESET)"
-	uvx --refresh $(PROJECT_NAME) --help || echo "$(YELLOW)⚠️  UVX refresh completed$(RESET)"
+	@echo "$(BLUE)🔄 Refreshing UVX cache (PyPI installation)...$(RESET)"
+	uvx --refresh-package $(PROJECT_NAME) --from $(PROJECT_NAME) python -c "print('$(GREEN)✅ UVX cache refreshed$(RESET)')"
 
 install-and-refresh: install refresh-uvx ## Install dependencies and refresh UVX cache
 	@echo "$(GREEN)✅ Installation and refresh completed$(RESET)"
