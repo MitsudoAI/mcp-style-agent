@@ -12,11 +12,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from ..config.exceptions import (
-    DeepThinkingError,
     MCPFormatValidationError,
-    MCPQualityGateError,
-    MCPSessionRecoveryError,
-    MCPToolError,
     MCPToolExecutionError,
     SessionNotFoundError,
 )
@@ -117,7 +113,7 @@ class MCPTools:
                     session_id=None,
                     context={"topic": input_data.topic, "complexity": input_data.complexity}
                 )
-            except Exception as handler_error:
+            except Exception:
                 # Fallback if error handler fails
                 return self.error_handler._create_fallback_response(
                     "start_thinking", e, None
@@ -219,13 +215,33 @@ class MCPTools:
 
         except Exception as e:
             try:
+                # Provide enriched context for error recovery
+                error_context = {
+                    "step_result": input_data.step_result,
+                    "quality_feedback": input_data.quality_feedback,
+                    "session_lookup_failed": True
+                }
+                
+                # Try to get partial session info for better recovery
+                try:
+                    session = self.session_manager.get_session(input_data.session_id)
+                    if session:
+                        error_context.update({
+                            "current_step": session.current_step,
+                            "flow_type": session.flow_type,
+                            "step_number": session.step_number,
+                            "session_lookup_failed": False
+                        })
+                except Exception:
+                    pass  # Keep original context
+                
                 return self.error_handler.handle_mcp_error(
                     tool_name="next_step",
                     error=e,
                     session_id=input_data.session_id,
-                    context={"step_result": input_data.step_result}
+                    context=error_context
                 )
-            except Exception as handler_error:
+            except Exception:
                 # Fallback if error handler fails
                 return self.error_handler._create_fallback_response(
                     "next_step", e, input_data.session_id
@@ -344,7 +360,7 @@ class MCPTools:
                         "analysis_type": input_data.analysis_type,
                     }
                 )
-            except Exception as handler_error:
+            except Exception:
                 # Fallback if error handler fails
                 return self.error_handler._create_fallback_response(
                     "analyze_step", e, input_data.session_id
@@ -462,7 +478,7 @@ class MCPTools:
                     session_id=input_data.session_id,
                     context={"final_insights": input_data.final_insights}
                 )
-            except Exception as handler_error:
+            except Exception:
                 # Fallback if error handler fails
                 return self.error_handler._create_fallback_response(
                     "complete_thinking", e, input_data.session_id

@@ -14,7 +14,6 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from ..config.exceptions import (
-    DeepThinkingError,
     SessionError,
     SessionNotFoundError,
     SessionStateError,
@@ -280,7 +279,7 @@ class MCPErrorHandler:
             return "session_timeout"
         elif "format" in str(error).lower() or "validation" in str(error).lower():
             return "invalid_step_result"
-        elif "interrupted" in str(error).lower() or "flow" in str(error).lower():
+        elif "interrupted" in str(error).lower() and "flow" in str(error).lower():
             return "flow_interrupted"
         elif "quality" in str(error).lower():
             return "quality_gate_failed"
@@ -437,8 +436,26 @@ class MCPErrorHandler:
         self, session_id: Optional[str], context: Optional[Dict[str, Any]]
     ) -> MCPToolOutput:
         """Handle flow interruption error"""
-        current_step = context.get("current_step", "unknown") if context else "unknown"
-        completed_steps = context.get("completed_steps", []) if context else []
+        # Try to get actual session state from database
+        current_step = "unknown"
+        completed_steps = []
+        
+        if session_id:
+            try:
+                session = self.session_manager.get_session(session_id)
+                if session:
+                    current_step = session.current_step or "unknown"
+                    # Get completed steps from database
+                    steps = self.session_manager.db.get_session_steps(session_id)
+                    completed_steps = [step["step_name"] for step in steps if step.get("status") == "completed"]
+            except Exception as e:
+                logger.warning(f"Could not retrieve session state for recovery: {e}")
+        
+        # Fallback to context if available
+        if current_step == "unknown" and context:
+            current_step = context.get("current_step", "unknown")
+        if not completed_steps and context:
+            completed_steps = context.get("completed_steps", [])
         
         template_params = {
             "session_id": session_id or "unknown",

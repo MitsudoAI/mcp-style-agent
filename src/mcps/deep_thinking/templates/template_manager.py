@@ -1688,6 +1688,7 @@ class TemplateManager:
             # Utility templates
             "session_recovery": "会话恢复模板",
             "comprehensive_summary": "综合总结模板",
+            "flow_completion": "流程完成模板",
             "generic_step": "通用步骤模板",
         }
         
