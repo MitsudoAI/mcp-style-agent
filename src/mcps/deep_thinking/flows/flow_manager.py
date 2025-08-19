@@ -10,18 +10,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..config.exceptions import ConfigurationError, FlowExecutionError, InvalidTransitionError
 from ..data.database import ThinkingDatabase
+from ..models.thinking_models import FlowStep, FlowStepStatus
 
 logger = logging.getLogger(__name__)
-
-
-class FlowStepStatus(str, Enum):
-    """Status of a flow step"""
-
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
 
 
 class FlowStatus(str, Enum):
@@ -35,72 +26,6 @@ class FlowStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class FlowStep:
-    """Represents a single step in a thinking flow"""
-
-    def __init__(
-        self,
-        step_id: str,
-        step_name: str,
-        step_type: str,
-        template_name: str,
-        dependencies: List[str] = None,
-    ):
-        self.step_id = step_id
-        self.step_name = step_name
-        self.step_type = step_type
-        self.template_name = template_name
-        self.dependencies = dependencies or []
-        self.status = FlowStepStatus.PENDING
-        self.start_time: Optional[datetime] = None
-        self.end_time: Optional[datetime] = None
-        self.result: Optional[str] = None
-        self.error_message: Optional[str] = None
-        self.quality_score: Optional[float] = None
-        self.retry_count = 0
-        self.max_retries = 3
-
-    def start(self):
-        """Mark step as started"""
-        self.status = FlowStepStatus.IN_PROGRESS
-        self.start_time = datetime.now()
-
-    def complete(self, result: str, quality_score: Optional[float] = None):
-        """Mark step as completed"""
-        self.status = FlowStepStatus.COMPLETED
-        self.end_time = datetime.now()
-        self.result = result
-        self.quality_score = quality_score
-
-    def fail(self, error_message: str):
-        """Mark step as failed"""
-        self.status = FlowStepStatus.FAILED
-        self.end_time = datetime.now()
-        self.error_message = error_message
-        self.retry_count += 1
-
-    def can_retry(self) -> bool:
-        """Check if step can be retried"""
-        return (
-            self.retry_count < self.max_retries and self.status == FlowStepStatus.FAILED
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert step to dictionary"""
-        return {
-            "step_id": self.step_id,
-            "step_name": self.step_name,
-            "step_type": self.step_type,
-            "template_name": self.template_name,
-            "dependencies": self.dependencies,
-            "status": self.status.value,
-            "start_time": self.start_time.isoformat() if self.start_time else None,
-            "end_time": self.end_time.isoformat() if self.end_time else None,
-            "result": self.result,
-            "error_message": self.error_message,
-            "quality_score": self.quality_score,
-            "retry_count": self.retry_count,
-        }
 
 
 class ThinkingFlow:

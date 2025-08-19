@@ -13,7 +13,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..config.exceptions import FlowExecutionError
 from ..data.database import ThinkingDatabase
-from ..flows.flow_manager import FlowManager, FlowStep, ThinkingFlow
+from ..flows.flow_manager import FlowManager, ThinkingFlow
+from ..models.thinking_models import FlowStep
 from ..templates.template_manager import TemplateManager
 
 logger = logging.getLogger(__name__)

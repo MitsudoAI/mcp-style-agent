@@ -17,7 +17,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from ..config.exceptions import FlowStateError, InvalidTransitionError
 from ..data.database import ThinkingDatabase
-from .flow_manager import FlowStatus, FlowStep, FlowStepStatus, ThinkingFlow
+from .flow_manager import FlowStatus, ThinkingFlow
+from ..models.thinking_models import FlowStep, FlowStepStatus
 
 logger = logging.getLogger(__name__)
 

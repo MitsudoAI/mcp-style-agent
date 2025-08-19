@@ -16,45 +16,59 @@ When the system performed problem decomposition and generated 7 sub-questions (S
 
 ## 🔧 Root Cause Analysis
 
-1. **Configuration vs Implementation Mismatch**: 
-   - `flows.yaml` correctly configured `for_each: "decomposer.sub_questions"`
-   - But `FlowExecutor.execute_flow()` method only executed steps sequentially without processing the `for_each` directive
+**Primary Issue: FlowStep Class Definition Mismatch**
 
-2. **Missing Iteration Logic**: 
-   - No code to detect and handle `for_each` configuration
-   - No mechanism to extract sub-questions from previous step output
-   - No iteration over collection items
+1. **Dual FlowStep Classes**:
+   - `flows/flow_manager.py` defined old FlowStep class without `for_each` parameter
+   - `models/thinking_models.py` defined new FlowStep class with `for_each` field
+   - Different parts of system imported different versions
 
-3. **Context Passing Issues**:
-   - Step outputs not properly stored for reference by subsequent steps
-   - No way to access `decomposer.sub_questions` in evidence collection step
+2. **Import Chain Issues**:
+   - YAML parser used `models.thinking_models.FlowStep` (correct version with for_each)
+   - FlowExecutor used `flows.flow_manager.FlowStep` (wrong version without for_each)
+   - Configuration parsed correctly but lost during step object creation
+
+3. **Missing for_each Processing**:
+   - Even after fixing imports, FlowExecutor had no logic to handle for_each iteration
+   - No mechanism to resolve references like "decomposer.sub_questions"
+   - No context passing between steps
 
 ## ✅ Solution Implemented
 
-### 1. Enhanced FlowExecutor.execute_flow() Method
+### 1. Unified FlowStep Class Definition
+**Files**: `src/mcps/deep_thinking/models/thinking_models.py`, `src/mcps/deep_thinking/flows/flow_manager.py`
+
+- Removed duplicate FlowStep class from `flow_manager.py`
+- Enhanced `models.thinking_models.FlowStep` with missing methods (`start`, `complete`, `fail`)
+- Added FlowStepStatus enum to models
+- Updated all imports to use unified FlowStep definition
+
+### 2. Enhanced FlowExecutor.execute_flow() Method  
 **File**: `src/mcps/deep_thinking/flows/flow_executor.py`
 
-- Added detection of `for_each` configuration in step configuration
+- Fixed imports to use correct FlowStep class with for_each support
+- Added detection of `for_each` configuration in step objects
 - Implemented branching logic: normal execution vs for_each iteration
 - Added `step_outputs` dictionary to store previous step results
-- Enhanced context passing between steps
 
-### 2. New _execute_step_with_for_each() Method
+### 3. New _execute_step_with_for_each() Method
 - Processes all items in the referenced collection
 - Executes the step once for each sub-question
 - Provides proper error handling and recovery
 - Maintains detailed iteration results
 
-### 3. New _resolve_for_each_reference() Method  
-- Parses `"step_name.property"` references 
-- Extracts data from previous step outputs
-- Handles JSON parsing of step outputs
+### 4. New _resolve_for_each_reference() Method  
+- Parses `"step_name.property"` references (e.g. "decomposer.sub_questions")
+- Extracts data from previous step outputs with JSON parsing
+- Handles missing data and invalid formats gracefully
 - Provides comprehensive error handling and logging
 
-### 4. Enhanced Context Management
-- Each iteration gets proper context with current item data
-- Step outputs stored and accessible by later steps
-- Detailed logging for debugging and monitoring
+### 5. Import Chain Fixes
+**Files**: `src/mcps/deep_thinking/flows/flow_state_machine.py`
+
+- Updated all imports to use unified FlowStep and FlowStepStatus
+- Ensured consistent class definitions across entire system
+- Eliminated type mismatches in flow processing
 
 ## 🧪 Testing
 
@@ -111,20 +125,38 @@ Created comprehensive test suite:
 
 ## 📋 Files Modified
 
-1. **`src/mcps/deep_thinking/flows/flow_executor.py`**
-   - Enhanced `execute_flow()` method
+1. **`src/mcps/deep_thinking/models/thinking_models.py`**
+   - Added FlowStepStatus enum (moved from flow_manager.py)
+   - Enhanced FlowStep class with state management methods
+   - Added status, start_time, end_time, retry_count fields
+   - Added start(), complete(), fail(), can_retry() methods
+
+2. **`src/mcps/deep_thinking/flows/flow_executor.py`**
+   - Fixed imports to use correct FlowStep class
+   - Enhanced `execute_flow()` method with for_each detection
    - Added `_execute_step_with_for_each()` method  
    - Added `_resolve_for_each_reference()` method
    - Improved context management and error handling
 
-2. **`tests/test_for_each_simple.py`** (New)
+3. **`src/mcps/deep_thinking/flows/flow_manager.py`**
+   - Removed duplicate FlowStep class definition
+   - Removed duplicate FlowStepStatus enum
+   - Updated imports to use unified classes
+
+4. **`src/mcps/deep_thinking/flows/flow_state_machine.py`**
+   - Updated imports to use unified FlowStep and FlowStepStatus classes
+
+5. **`tests/test_for_each_simple.py`** (New)
    - Unit tests for core functionality
 
-3. **`tests/test_integration.py`** (New)  
+6. **`tests/test_integration.py`** (New)  
    - End-to-end integration tests
 
-4. **`BUGFIX_FOR_EACH.md`** (New)
-   - This documentation
+7. **`tests/test_system_integration.py`** (New)
+   - System integration tests with component verification
+
+8. **`BUGFIX_FOR_EACH.md`** (Updated)
+   - Comprehensive documentation of the fix
 
 ## 🎯 Verification
 

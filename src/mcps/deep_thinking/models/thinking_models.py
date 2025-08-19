@@ -9,6 +9,16 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
+class FlowStepStatus(str, Enum):
+    """Status of a flow step"""
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
 class ComplexityLevel(str, Enum):
     """Question complexity levels"""
 
@@ -193,6 +203,66 @@ class FlowStep(BaseModel):
     retry_config: Optional[Dict[str, Any]] = Field(
         default=None, description="Retry configuration"
     )
+    
+    # State management fields
+    status: FlowStepStatus = Field(default=FlowStepStatus.PENDING, description="Step status")
+    start_time: Optional[datetime] = Field(default=None, description="Step start time")
+    end_time: Optional[datetime] = Field(default=None, description="Step end time")
+    result: Optional[str] = Field(default=None, description="Step result")
+    error_message: Optional[str] = Field(default=None, description="Error message if failed")
+    quality_score: Optional[float] = Field(default=None, description="Quality score")
+    retry_count: int = Field(default=0, description="Number of retries attempted")
+    max_retries: int = Field(default=3, description="Maximum number of retries")
+
+    def start(self):
+        """Mark step as started"""
+        self.status = FlowStepStatus.IN_PROGRESS
+        self.start_time = datetime.now()
+
+    def complete(self, result: str, quality_score: Optional[float] = None):
+        """Mark step as completed"""
+        self.status = FlowStepStatus.COMPLETED
+        self.end_time = datetime.now()
+        self.result = result
+        if quality_score is not None:
+            self.quality_score = quality_score
+
+    def fail(self, error_message: str):
+        """Mark step as failed"""
+        self.status = FlowStepStatus.FAILED
+        self.end_time = datetime.now()
+        self.error_message = error_message
+        self.retry_count += 1
+
+    def can_retry(self) -> bool:
+        """Check if step can be retried"""
+        return (
+            self.retry_count < self.max_retries and self.status == FlowStepStatus.FAILED
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert step to dictionary"""
+        return {
+            "step_id": self.step_id,
+            "step_name": self.step_name,
+            "agent_type": self.agent_type,
+            "description": self.description,
+            "config": self.config,
+            "conditions": self.conditions,
+            "parallel": self.parallel,
+            "for_each": self.for_each,
+            "repeat_until": self.repeat_until,
+            "timeout_seconds": self.timeout_seconds,
+            "retry_config": self.retry_config,
+            "status": self.status.value,
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "result": self.result,
+            "error_message": self.error_message,
+            "quality_score": self.quality_score,
+            "retry_count": self.retry_count,
+            "max_retries": self.max_retries,
+        }
 
 
 class ThinkingFlow(BaseModel):
