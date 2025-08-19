@@ -9,11 +9,11 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
-from ..config.exceptions import FlowExecutionError, TemplateError
+from ..config.exceptions import FlowExecutionError
 from ..data.database import ThinkingDatabase
-from ..flows.flow_manager import FlowManager, FlowStatus, FlowStep, ThinkingFlow
+from ..flows.flow_manager import FlowManager, FlowStep, ThinkingFlow
 from ..templates.template_manager import TemplateManager
 
 logger = logging.getLogger(__name__)
@@ -157,7 +157,7 @@ class FlowExecutor:
         Execute an entire flow
         
         This method executes all steps in a flow in sequence. It handles step dependencies,
-        execution monitoring, and error handling.
+        execution monitoring, and error handling, including for_each iterations.
         
         Args:
             flow_id: ID of the flow to execute
@@ -177,6 +177,9 @@ class FlowExecutor:
         steps_failed = 0
         failed_steps = []
         
+        # Store step outputs for reference by later steps
+        step_outputs = {}
+        
         try:
             # Execute steps in sequence
             while True:
@@ -185,28 +188,54 @@ class FlowExecutor:
                 if not step:
                     break  # No more steps to execute
                 
-                steps_executed += 1
+                # Check if this step has for_each configuration
+                step_config = getattr(step, 'config', {}) or {}
+                for_each = getattr(step, 'for_each', None) or step_config.get('for_each')
                 
-                try:
-                    # Execute step
-                    step_result = self.execute_step(flow_id, step.step_id, context)
-                    steps_succeeded += 1
+                if for_each:
+                    # Handle for_each iteration
+                    iteration_results = self._execute_step_with_for_each(
+                        flow_id, step, for_each, context, step_outputs, continue_on_error
+                    )
+                    steps_executed += iteration_results['steps_executed']
+                    steps_succeeded += iteration_results['steps_succeeded'] 
+                    steps_failed += iteration_results['steps_failed']
+                    failed_steps.extend(iteration_results['failed_steps'])
                     
-                    # Update context with step result
-                    if "context" in step_result:
-                        context.update(step_result["context"])
+                    # Store iteration results in step_outputs
+                    step_outputs[step.step_id] = iteration_results['results']
                     
-                except Exception as e:
-                    steps_failed += 1
-                    failed_steps.append({
-                        "step_id": step.step_id,
-                        "error": str(e)
-                    })
+                else:
+                    # Execute single step normally
+                    steps_executed += 1
                     
-                    logger.error(f"Error executing step {step.step_id} in flow {flow_id}: {e}")
-                    
-                    if not continue_on_error:
-                        raise
+                    try:
+                        # Execute step
+                        step_result = self.execute_step(flow_id, step.step_id, context)
+                        steps_succeeded += 1
+                        
+                        # Store step output for later reference
+                        if "template_content" in step_result:
+                            step_outputs[step.step_id] = step_result["template_content"]
+                        
+                        # Update context with step result
+                        if "context" in step_result:
+                            context.update(step_result["context"])
+                        
+                    except Exception as e:
+                        steps_failed += 1
+                        failed_steps.append({
+                            "step_id": step.step_id,
+                            "error": str(e)
+                        })
+                        
+                        logger.error(f"Error executing step {step.step_id} in flow {flow_id}: {e}")
+                        
+                        if not continue_on_error:
+                            raise
+                
+                # Add step outputs to context for next steps
+                context['step_outputs'] = step_outputs
             
             # Calculate execution time
             execution_time_ms = int((time.time() - start_time) * 1000)
@@ -228,7 +257,8 @@ class FlowExecutor:
                 "steps_executed": steps_executed,
                 "steps_succeeded": steps_succeeded,
                 "steps_failed": steps_failed,
-                "failed_steps": failed_steps
+                "failed_steps": failed_steps,
+                "step_outputs": step_outputs
             }
             
         except Exception as e:
@@ -248,6 +278,159 @@ class FlowExecutor:
                 "steps_failed": steps_failed,
                 "failed_steps": failed_steps
             }
+
+    def _execute_step_with_for_each(
+        self, 
+        flow_id: str, 
+        step, 
+        for_each: str, 
+        context: Dict[str, Any], 
+        step_outputs: Dict[str, Any],
+        continue_on_error: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Execute a step with for_each iteration
+        
+        Args:
+            flow_id: ID of the flow
+            step: Step to execute
+            for_each: Reference to data to iterate over (e.g. "decomposer.sub_questions")
+            context: Execution context
+            step_outputs: Previous step outputs
+            continue_on_error: Whether to continue on error
+            
+        Returns:
+            Dict containing iteration results
+        """
+        logger.info(f"Executing step {step.step_id} with for_each: {for_each}")
+        
+        # Parse the for_each reference (e.g. "decomposer.sub_questions")
+        iteration_data = self._resolve_for_each_reference(for_each, step_outputs, context)
+        if not iteration_data:
+            logger.warning(f"No data found for for_each reference: {for_each}")
+            return {
+                'steps_executed': 0,
+                'steps_succeeded': 0,
+                'steps_failed': 0,
+                'failed_steps': [],
+                'results': []
+            }
+        
+        results = []
+        steps_executed = 0
+        steps_succeeded = 0
+        steps_failed = 0
+        failed_steps = []
+        
+        # Execute step for each item in the iteration data
+        for i, item in enumerate(iteration_data):
+            steps_executed += 1
+            iteration_context = context.copy()
+            
+            # Add current iteration item to context
+            if isinstance(item, dict):
+                iteration_context.update(item)
+                # Also add as current_item for template access
+                iteration_context['current_item'] = item
+                iteration_context['current_index'] = i
+            else:
+                iteration_context['current_item'] = item
+                iteration_context['current_index'] = i
+            
+            try:
+                # Execute step for this iteration
+                step_result = self.execute_step(flow_id, f"{step.step_id}_iter_{i}", iteration_context)
+                steps_succeeded += 1
+                
+                # Store iteration result
+                result_data = {
+                    'iteration_index': i,
+                    'iteration_item': item,
+                    'result': step_result.get('template_content', ''),
+                    'execution_id': step_result.get('execution_id')
+                }
+                results.append(result_data)
+                
+                logger.info(f"Completed iteration {i} of step {step.step_id}")
+                
+            except Exception as e:
+                steps_failed += 1
+                error_info = {
+                    'step_id': f"{step.step_id}_iter_{i}",
+                    'iteration_index': i,
+                    'iteration_item': item,
+                    'error': str(e)
+                }
+                failed_steps.append(error_info)
+                
+                logger.error(f"Error in iteration {i} of step {step.step_id}: {e}")
+                
+                if not continue_on_error:
+                    raise
+        
+        logger.info(
+            f"Completed for_each execution of step {step.step_id}: "
+            f"{steps_succeeded}/{steps_executed} iterations succeeded"
+        )
+        
+        return {
+            'steps_executed': steps_executed,
+            'steps_succeeded': steps_succeeded,
+            'steps_failed': steps_failed,
+            'failed_steps': failed_steps,
+            'results': results
+        }
+
+    def _resolve_for_each_reference(self, for_each: str, step_outputs: Dict[str, Any], context: Dict[str, Any]) -> List[Any]:
+        """
+        Resolve for_each reference to get iteration data
+        
+        Args:
+            for_each: Reference string (e.g. "decomposer.sub_questions")
+            step_outputs: Previous step outputs
+            context: Execution context
+            
+        Returns:
+            List of items to iterate over
+        """
+        try:
+            # Parse reference format "step_name.property"
+            if '.' not in for_each:
+                logger.warning(f"Invalid for_each format: {for_each}. Expected 'step_name.property'")
+                return []
+            
+            step_name, property_name = for_each.split('.', 1)
+            
+            # Get the step output
+            step_output = step_outputs.get(step_name)
+            if not step_output:
+                logger.warning(f"No output found for step: {step_name}")
+                return []
+            
+            # Try to parse as JSON if it's a string
+            if isinstance(step_output, str):
+                try:
+                    step_output = json.loads(step_output)
+                except json.JSONDecodeError:
+                    logger.warning(f"Could not parse step output as JSON: {step_name}")
+                    return []
+            
+            # Navigate to the property
+            if isinstance(step_output, dict) and property_name in step_output:
+                data = step_output[property_name]
+                if isinstance(data, list):
+                    logger.info(f"Found {len(data)} items for for_each iteration from {for_each}")
+                    return data
+                else:
+                    logger.warning(f"Property {property_name} is not a list: {type(data)}")
+                    return []
+            else:
+                logger.warning(f"Property {property_name} not found in step output for {step_name}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error resolving for_each reference {for_each}: {e}")
+            return []
 
     def _select_template(
         self, flow: ThinkingFlow, step: FlowStep, context: Dict[str, Any]
