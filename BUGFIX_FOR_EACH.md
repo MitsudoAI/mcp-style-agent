@@ -16,22 +16,22 @@ When the system performed problem decomposition and generated 7 sub-questions (S
 
 ## 🔧 Root Cause Analysis
 
-**Primary Issue: FlowStep Class Definition Mismatch**
+**Primary Issue: Hardcoded Flow Definition Without for_each**
 
-1. **Dual FlowStep Classes**:
-   - `flows/flow_manager.py` defined old FlowStep class without `for_each` parameter
-   - `models/thinking_models.py` defined new FlowStep class with `for_each` field
-   - Different parts of system imported different versions
+1. **Wrong Flow Definition Source**:
+   - System used hardcoded flow definitions in `FlowManager._load_default_flows()`
+   - These hardcoded definitions had no `for_each` configuration
+   - The `flows.yaml` file was never actually used by the system
 
-2. **Import Chain Issues**:
-   - YAML parser used `models.thinking_models.FlowStep` (correct version with for_each)
-   - FlowExecutor used `flows.flow_manager.FlowStep` (wrong version without for_each)
-   - Configuration parsed correctly but lost during step object creation
+2. **Missing for_each in Hardcoded Flows**:
+   - The `collect_evidence` step in hardcoded flows had no `for_each` field
+   - This caused evidence collection to run only once instead of per sub-question
+   - Only the first sub-question (SQ1) was processed
 
-3. **Missing for_each Processing**:
-   - Even after fixing imports, FlowExecutor had no logic to handle for_each iteration
-   - No mechanism to resolve references like "decomposer.sub_questions"
-   - No context passing between steps
+3. **FlowStep Creation Issues**:
+   - Even if `for_each` was in the definition, `create_flow()` method didn't pass it to FlowStep constructor
+   - Missing `dependencies` field in FlowStep model
+   - Inconsistent class definitions between files
 
 ## ✅ Solution Implemented
 

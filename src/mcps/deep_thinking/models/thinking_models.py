@@ -203,6 +203,9 @@ class FlowStep(BaseModel):
     retry_config: Optional[Dict[str, Any]] = Field(
         default=None, description="Retry configuration"
     )
+    dependencies: List[str] = Field(
+        default_factory=list, description="List of step IDs this step depends on"
+    )
     
     # State management fields
     status: FlowStepStatus = Field(default=FlowStepStatus.PENDING, description="Step status")
@@ -254,6 +257,7 @@ class FlowStep(BaseModel):
             "repeat_until": self.repeat_until,
             "timeout_seconds": self.timeout_seconds,
             "retry_config": self.retry_config,
+            "dependencies": self.dependencies,
             "status": self.status.value,
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "end_time": self.end_time.isoformat() if self.end_time else None,

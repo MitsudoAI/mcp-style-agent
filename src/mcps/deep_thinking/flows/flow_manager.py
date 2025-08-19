@@ -204,6 +204,7 @@ class FlowManager:
                     "step_type": "research",
                     "template_name": "evidence_collection",
                     "dependencies": ["decompose"],
+                    "for_each": "decompose.sub_questions",
                 },
                 {
                     "step_id": "evaluate",
@@ -264,9 +265,11 @@ class FlowManager:
         for step_def in flow_def["steps"]:
             step = FlowStep(
                 step_id=step_def["step_id"],
+                agent_type=step_def.get("step_type", "unknown"),  # Map step_type to agent_type
                 step_name=step_def["step_name"],
-                step_type=step_def["step_type"],
-                template_name=step_def["template_name"],
+                description=step_def.get("description", ""),
+                config=step_def.get("config", {}),
+                for_each=step_def.get("for_each"),  # Add for_each support
                 dependencies=step_def.get("dependencies", []),
             )
             flow.add_step(step)
