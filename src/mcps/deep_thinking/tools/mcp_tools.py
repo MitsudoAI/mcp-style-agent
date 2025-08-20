@@ -177,8 +177,14 @@ class MCPTools:
                 # Flow completed
                 return self._handle_flow_completion(input_data.session_id)
 
-            # Store original step number for metadata calculation
-            original_step_number = session.step_number
+            # Calculate correct step number for metadata based on the next step
+            # For for_each continuations, we want to show the step number of the step being iterated
+            if next_step_info.get("for_each_continuation"):
+                # For for_each iterations, use current session step number which should already be correct
+                metadata_step_number = session.step_number
+            else:
+                # For normal progression, increment from current step
+                metadata_step_number = session.step_number + 1
 
             # Update session state with enhanced tracking
             # Only update step number if not for_each continuation
@@ -217,7 +223,7 @@ class MCPTools:
 
             # Build comprehensive context for the next step
             step_context = self._build_step_context(
-                session, next_step_info, original_step_number
+                session, next_step_info, metadata_step_number
             )
 
             return MCPToolOutput(
@@ -229,9 +235,8 @@ class MCPTools:
                 context=step_context,
                 next_action=self._determine_next_action(next_step_info, session),
                 metadata={
-                    "step_number": original_step_number
-                    + (0 if next_step_info.get("for_each_continuation") else 1),
-                    "flow_progress": f"{original_step_number + (0 if next_step_info.get('for_each_continuation') else 1)}/{self.flow_manager.get_total_steps(session.flow_type)}",
+                    "step_number": metadata_step_number,
+                    "flow_progress": f"{metadata_step_number}/{self.flow_manager.get_total_steps(session.flow_type)}",
                     "flow_type": session.flow_type,
                     "previous_step": session.current_step,
                     "quality_gate_passed": quality_score is None
@@ -636,7 +641,7 @@ class MCPTools:
         self,
         session: SessionState,
         next_step_info: Dict[str, Any],
-        original_step_number: int,
+        step_number: int,
     ) -> Dict[str, Any]:
         """Build comprehensive context for the next step"""
         return {
@@ -644,8 +649,7 @@ class MCPTools:
             "session_id": session.session_id,
             "topic": session.topic,
             "current_step": next_step_info["step_name"],
-            "step_number": original_step_number
-            + (0 if next_step_info.get("for_each_continuation") else 1),
+            "step_number": step_number,
             "flow_type": session.flow_type,
             "completed_steps": list(session.step_results.keys()),
             "quality_scores": session.quality_scores,
