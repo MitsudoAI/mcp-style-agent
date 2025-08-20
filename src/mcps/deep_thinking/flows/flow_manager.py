@@ -691,17 +691,24 @@ class FlowManager:
                 "所有子问题已处理完成",
                 "全部子问题分析完毕",
                 "完成了所有子问题",
+                "证据收集阶段已完成",
+                "证据收集已完成",
+                "evidence collection complete",
+                "evidence collection phase complete",
                 "comprehensive analysis of all",
                 "all sub-questions processed",
                 "final sub-question analysis",
                 "第七个子问题",
+                "现在需要进入综合分析阶段",
+                "现在需要进入下一个思考阶段",
+                "需要进入.*阶段",  # Regex pattern
                 "所有.*子问题已处理完成",  # Regex-style pattern
             ]
 
             for indicator in completion_indicators:
-                if "所有.*子问题已处理完成" in indicator:
-                    # Use regex for this pattern
-                    if re.search(r"所有.*子问题已处理完成", step_result):
+                # Handle regex patterns
+                if ".*" in indicator:
+                    if re.search(indicator, step_result):
                         logger.info(f"Found completion indicator (regex): {indicator}")
                         return False
                 else:
