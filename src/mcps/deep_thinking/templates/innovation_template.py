@@ -12,7 +12,7 @@ from typing import Dict, Any
 def get_innovation_template(params: Dict[str, Any]) -> str:
     """
     Get the innovation thinking template with the specified parameters.
-    
+
     Args:
         params: Dictionary containing template parameters:
             - concept: The base concept to innovate upon
@@ -20,7 +20,7 @@ def get_innovation_template(params: Dict[str, Any]) -> str:
             - constraints: Any constraints to consider
             - method: The innovation method to use (scamper, triz, etc.)
             - complexity: The complexity level (high, medium, low)
-    
+
     Returns:
         str: The formatted template
     """
@@ -30,7 +30,7 @@ def get_innovation_template(params: Dict[str, Any]) -> str:
     constraints = params.get("constraints", "[constraints]")
     method = params.get("method", "scamper").lower()
     complexity = params.get("complexity", "medium")
-    
+
     # Select the appropriate template based on complexity
     if complexity.lower() in ["high", "高"]:
         return get_high_complexity_template(concept, direction, constraints, method)
@@ -40,16 +40,18 @@ def get_innovation_template(params: Dict[str, Any]) -> str:
         return get_medium_complexity_template(concept, direction, constraints, method)
 
 
-def get_high_complexity_template(concept: str, direction: str, constraints: str, method: str) -> str:
+def get_high_complexity_template(
+    concept: str, direction: str, constraints: str, method: str
+) -> str:
     """
     Get the high complexity innovation template.
-    
+
     Args:
         concept: The base concept to innovate upon
         direction: The desired innovation direction
         constraints: Any constraints to consider
         method: The innovation method to use
-    
+
     Returns:
         str: The formatted template
     """
@@ -458,16 +460,18 @@ TRIZ(发明问题解决理论)提供了40个创新原理，以下是最适用于
     return template
 
 
-def get_medium_complexity_template(concept: str, direction: str, constraints: str, method: str) -> str:
+def get_medium_complexity_template(
+    concept: str, direction: str, constraints: str, method: str
+) -> str:
     """
     Get the medium complexity innovation template.
-    
+
     Args:
         concept: The base concept to innovate upon
         direction: The desired innovation direction
         constraints: Any constraints to consider
         method: The innovation method to use
-    
+
     Returns:
         str: The formatted template
     """
@@ -743,16 +747,18 @@ def get_medium_complexity_template(concept: str, direction: str, constraints: st
     return template
 
 
-def get_low_complexity_template(concept: str, direction: str, constraints: str, method: str) -> str:
+def get_low_complexity_template(
+    concept: str, direction: str, constraints: str, method: str
+) -> str:
     """
     Get the low complexity innovation template.
-    
+
     Args:
         concept: The base concept to innovate upon
         direction: The desired innovation direction
         constraints: Any constraints to consider
         method: The innovation method to use
-    
+
     Returns:
         str: The formatted template
     """

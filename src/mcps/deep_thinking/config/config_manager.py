@@ -75,11 +75,11 @@ class ConfigManager:
         self.file_observer: Optional[Observer] = None
         self.is_watching = False
         self._lock = asyncio.Lock()
-        
+
         # Initialize new components
         self.yaml_loader = YAMLConfigLoader(self.config_dir)
         self.hot_reload_manager = HotReloadManager(self.config_dir, self.yaml_loader)
-        
+
         # Register for hot reload notifications
         self.hot_reload_manager.add_reload_callback(self._on_hot_reload)
         self.hot_reload_manager.add_error_callback(self._on_reload_error)
@@ -115,16 +115,16 @@ class ConfigManager:
         async with self._lock:
             # Create config directory if it doesn't exist
             self.config_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Create default configs if they don't exist
             self.yaml_loader.create_default_configs()
 
             # Initialize hot reload manager
             await self.hot_reload_manager.initialize()
-            
+
             # Load configurations from hot reload manager
             self.config_data = self.hot_reload_manager.get_all_configs()
-            
+
             # Build config files mapping
             self._build_config_files_mapping()
 
@@ -414,40 +414,40 @@ class ConfigManager:
     def _on_hot_reload(self, config_name: str, config_data: Dict[str, Any]) -> None:
         """
         Handle hot reload notifications
-        
+
         Args:
             config_name: Name of the configuration that was reloaded
             config_data: New configuration data
         """
         logger.info(f"Hot reload notification for config: {config_name}")
-        
+
         # Update local config data
         self.config_data[config_name] = config_data
-        
+
         # Notify registered callbacks
         for callback in self.reload_callbacks:
             try:
                 callback(config_name, config_data)
             except Exception as e:
                 logger.error(f"Config reload callback failed: {e}")
-    
+
     def _on_reload_error(self, config_name: str, error: Exception) -> None:
         """
         Handle hot reload errors
-        
+
         Args:
             config_name: Name of the configuration that had an error
             error: The error that occurred
         """
         logger.error(f"Hot reload error for config '{config_name}': {error}")
-    
+
     def _build_config_files_mapping(self) -> None:
         """Build mapping of config names to file paths"""
         self.config_files.clear()
-        
+
         # Get monitored files from hot reload manager
         monitored_files = self.hot_reload_manager.get_monitored_files()
-        
+
         for file_path in monitored_files:
             config_name = file_path.stem
             if config_name in ["system", "flows"]:
@@ -456,42 +456,44 @@ class ConfigManager:
                 # Flow files map to "flows" config
                 if "flows" not in self.config_files:
                     self.config_files["flows"] = file_path
-    
-    def validate_config(self, config_name: str, config_data: Optional[Dict[str, Any]] = None) -> bool:
+
+    def validate_config(
+        self, config_name: str, config_data: Optional[Dict[str, Any]] = None
+    ) -> bool:
         """
         Validate configuration data
-        
+
         Args:
             config_name: Name of configuration to validate
             config_data: Configuration data to validate (uses current if None)
-            
+
         Returns:
             bool: True if valid
-            
+
         Raises:
             ConfigurationError: If validation fails
         """
         if config_data is None:
             config_data = self.get_config(config_name)
-        
+
         if config_data is None:
             raise ConfigurationError(f"Configuration '{config_name}' not found")
-        
+
         is_valid, errors = config_validator.validate_config(config_name, config_data)
-        
+
         if not is_valid:
             error_msg = f"Configuration validation failed for '{config_name}': {'; '.join(errors)}"
             raise ConfigurationError(error_msg)
-        
+
         return True
-    
+
     def get_validation_summary(self, config_name: str) -> Dict[str, Any]:
         """
         Get validation summary for a configuration
-        
+
         Args:
             config_name: Name of configuration to validate
-            
+
         Returns:
             Dict[str, Any]: Validation summary
         """
@@ -503,68 +505,67 @@ class ConfigManager:
                 "error_count": 1,
                 "errors": [f"Configuration '{config_name}' not found"],
             }
-        
+
         return config_validator.get_validation_summary(config_name, config_data)
-    
+
     async def force_reload(self, config_name: Optional[str] = None) -> None:
         """
         Force reload of configuration(s)
-        
+
         Args:
             config_name: Specific configuration to reload, or None for all
         """
         await self.hot_reload_manager.force_reload(config_name)
-    
+
     def backup_config(self, config_name: str) -> Optional[Path]:
         """
         Create a backup of a configuration
-        
+
         Args:
             config_name: Name of configuration to backup
-            
+
         Returns:
             Optional[Path]: Path to backup file, None if backup failed
         """
         return self.yaml_loader.backup_config(config_name)
-    
+
     async def save_config_with_validation(
-        self, 
-        config_name: str, 
-        config_data: Dict[str, Any],
-        validate: bool = True
+        self, config_name: str, config_data: Dict[str, Any], validate: bool = True
     ) -> None:
         """
         Save configuration with optional validation
-        
+
         Args:
             config_name: Name of the configuration
             config_data: Configuration data to save
             validate: Whether to validate before saving
-            
+
         Raises:
             ConfigurationError: If validation fails or save fails
         """
         if validate:
             self.validate_config(config_name, config_data)
-        
+
         # Create backup before saving
         backup_path = self.backup_config(config_name)
         if backup_path:
             logger.info(f"Created backup before saving: {backup_path}")
-        
+
         try:
             # Save using YAML loader
             file_path = self.yaml_loader.save_config_file(config_name, config_data)
-            
+
             # Update local data
             self.config_data[config_name] = config_data
             self.config_files[config_name] = file_path
-            
+
             logger.info(f"Successfully saved configuration: {config_name}")
-            
+
         except Exception as e:
             logger.error(f"Failed to save configuration '{config_name}': {e}")
-            raise ConfigurationError(f"Failed to save configuration '{config_name}': {e}")
+            raise ConfigurationError(
+                f"Failed to save configuration '{config_name}': {e}"
+            )
 
     async def cleanup(self) -> None:
         """Cleanup resources"""

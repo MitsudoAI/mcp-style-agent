@@ -10,13 +10,13 @@ from typing import Dict, Any
 def get_critical_evaluation_template(params: Dict[str, Any]) -> str:
     """
     Get the critical evaluation template with the specified parameters.
-    
+
     Args:
         params: Dictionary containing template parameters:
             - content: The content to be evaluated
             - context: The context of the evaluation
             - complexity: The complexity level (high, medium, low)
-    
+
     Returns:
         str: The formatted template
     """
@@ -24,7 +24,7 @@ def get_critical_evaluation_template(params: Dict[str, Any]) -> str:
     content = params.get("content", "[content]")
     context = params.get("context", "[context]")
     complexity = params.get("complexity", "medium")
-    
+
     # Select the appropriate template based on complexity
     if complexity == "high":
         return get_high_complexity_template(content, context)
@@ -37,11 +37,11 @@ def get_critical_evaluation_template(params: Dict[str, Any]) -> str:
 def get_high_complexity_template(content: str, context: str) -> str:
     """
     Get the high complexity critical evaluation template.
-    
+
     Args:
         content: The content to be evaluated
         context: The context of the evaluation
-    
+
     Returns:
         str: The formatted template
     """
@@ -336,11 +336,11 @@ def get_high_complexity_template(content: str, context: str) -> str:
 def get_medium_complexity_template(content: str, context: str) -> str:
     """
     Get the medium complexity critical evaluation template.
-    
+
     Args:
         content: The content to be evaluated
         context: The context of the evaluation
-    
+
     Returns:
         str: The formatted template
     """
@@ -569,11 +569,11 @@ def get_medium_complexity_template(content: str, context: str) -> str:
 def get_low_complexity_template(content: str, context: str) -> str:
     """
     Get the low complexity critical evaluation template.
-    
+
     Args:
         content: The content to be evaluated
         context: The context of the evaluation
-    
+
     Returns:
         str: The formatted template
     """

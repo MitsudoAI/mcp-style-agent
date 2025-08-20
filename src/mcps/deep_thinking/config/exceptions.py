@@ -123,11 +123,7 @@ class FlowStateError(DeepThinkingError):
     """Raised when there are flow state-related errors"""
 
     def __init__(
-        self,
-        message: str,
-        flow_id: str = None,
-        current_state: str = None,
-        **kwargs
+        self, message: str, flow_id: str = None, current_state: str = None, **kwargs
     ):
         super().__init__(message, **kwargs)
         self.flow_id = flow_id
@@ -147,7 +143,7 @@ class InvalidTransitionError(FlowStateError):
         flow_id: str = None,
         current_state: str = None,
         event: str = None,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(message, flow_id, current_state, **kwargs)
         self.event = event
@@ -315,7 +311,11 @@ class TemplateError(DeepThinkingError):
     """Raised when template operations fail"""
 
     def __init__(
-        self, message: str, template_name: str = None, template_type: str = None, **kwargs
+        self,
+        message: str,
+        template_name: str = None,
+        template_type: str = None,
+        **kwargs,
     ):
         super().__init__(message, **kwargs)
         self.template_name = template_name

@@ -139,6 +139,16 @@ class SessionState(BaseModel):
     quality_scores: Dict[str, float] = Field(
         default_factory=dict, description="Quality scores for steps"
     )
+    # for_each iteration tracking
+    for_each_state: Dict[str, Any] = Field(
+        default_factory=dict, description="State tracking for for_each iterations"
+    )
+    iteration_count: Dict[str, int] = Field(
+        default_factory=dict, description="Current iteration count per step"
+    )
+    total_iterations: Dict[str, int] = Field(
+        default_factory=dict, description="Total iterations expected per step"
+    )
     created_at: datetime = Field(
         default_factory=datetime.now, description="Session creation time"
     )

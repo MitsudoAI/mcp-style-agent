@@ -28,17 +28,17 @@ class TestEvidenceCollectionTemplate:
             {
                 "sub_question": "人工智能对就业市场的影响是什么？",
                 "keywords": "人工智能, 就业市场, 自动化, 工作岗位",
-                "complexity": "medium"
-            }
+                "complexity": "medium",
+            },
         )
-        
+
         # Check that the template contains the main sections
         assert "# 深度思考：证据收集" in template
         assert "**子问题**:" in template
         assert "**搜索关键词**:" in template
         assert "**证据要求**:" in template
         assert "**复杂度**:" in template
-        
+
         # Check that the specific sub-question and keywords are included
         assert "人工智能对就业市场的影响是什么？" in template
         assert "人工智能, 就业市场, 自动化, 工作岗位" in template
@@ -50,10 +50,10 @@ class TestEvidenceCollectionTemplate:
             {
                 "sub_question": "测试问题",
                 "keywords": "测试关键词",
-                "complexity": "high"
-            }
+                "complexity": "high",
+            },
         )
-        
+
         # Check that all search strategy sections are included
         assert "## 搜索策略指导：" in template
         assert "### 1. 多源证据搜索策略" in template
@@ -63,7 +63,7 @@ class TestEvidenceCollectionTemplate:
         assert "**专家观点**:" in template
         assert "**行业资料**:" in template
         assert "**社区讨论**:" in template
-        
+
         # Check that quality requirements are included
         assert "### 2. 证据质量要求" in template
         assert "**可靠性**:" in template
@@ -80,10 +80,10 @@ class TestEvidenceCollectionTemplate:
             {
                 "sub_question": "测试问题",
                 "keywords": "测试关键词",
-                "complexity": "medium"
-            }
+                "complexity": "medium",
+            },
         )
-        
+
         # Check that all execution steps are included
         assert "## 执行步骤：" in template
         assert "1. **关键词优化**:" in template
@@ -96,13 +96,9 @@ class TestEvidenceCollectionTemplate:
         """Test that the template includes proper JSON format specification"""
         template = template_manager.get_template(
             "evidence_collection",
-            {
-                "sub_question": "测试问题",
-                "keywords": "测试关键词",
-                "complexity": "low"
-            }
+            {"sub_question": "测试问题", "keywords": "测试关键词", "complexity": "low"},
         )
-        
+
         # Check that JSON format specification is included
         assert "## JSON输出格式规范：" in template
         assert "```json" in template
@@ -111,7 +107,7 @@ class TestEvidenceCollectionTemplate:
         assert "evidence_collection" in template
         assert "conflict_analysis" in template
         assert "evidence_synthesis" in template
-        
+
         # Check that the template includes validation checklist
         assert "## 输出验证检查清单：" in template
         assert "1. JSON格式是否完全符合规范？" in template
@@ -127,17 +123,17 @@ class TestEvidenceCollectionTemplate:
             {
                 "sub_question": "测试问题",
                 "keywords": "测试关键词",
-                "complexity": "high"
-            }
+                "complexity": "high",
+            },
         )
-        
+
         # Check that conflict detection is emphasized
         assert "冲突检测与处理" in template
         assert "主动识别相互矛盾的信息" in template
         assert "分析冲突的可能原因" in template
         assert "标记争议点和不确定性" in template
         assert "提供多方观点的平衡呈现" in template
-        
+
         # Check that conflict analysis is part of the JSON structure
         assert "conflict_analysis" in template
         assert "conflict_id" in template
@@ -154,10 +150,10 @@ class TestEvidenceCollectionTemplate:
             {
                 "sub_question": "测试问题",
                 "keywords": "测试关键词",
-                "complexity": "medium"
-            }
+                "complexity": "medium",
+            },
         )
-        
+
         # Check that parameters are correctly inserted
         assert "**子问题**: 测试问题" in template
         assert "**搜索关键词**: 测试关键词" in template
@@ -170,9 +166,9 @@ class TestEvidenceCollectionTemplate:
             {
                 "sub_question": "测试问题"
                 # Missing keywords and complexity
-            }
+            },
         )
-        
+
         # Check that missing parameters are handled gracefully
         assert "**子问题**: 测试问题" in template
         assert "**搜索关键词**: [keywords]" in template

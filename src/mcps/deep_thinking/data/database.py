@@ -72,7 +72,7 @@ class ThinkingDatabase:
         self.db_path = Path(db_path) if db_path != ":memory:" else db_path
         self.encryption = DatabaseEncryption(encryption_key) if encryption_key else None
         self._memory_conn = None  # For persistent in-memory connections
-        
+
         # Initialize performance optimizer
         self.performance_optimizer = None
         if enable_performance_optimization and self.db_path != ":memory:":
@@ -82,7 +82,7 @@ class ThinkingDatabase:
             self.performance_optimizer = DatabasePerformanceOptimizer(
                 db_path_str, min_connections, max_connections
             )
-        
+
         self._init_database()
 
     def _init_database(self):
@@ -91,7 +91,7 @@ class ThinkingDatabase:
             with self.get_connection() as conn:
                 # Enable foreign key constraints
                 conn.execute("PRAGMA foreign_keys=ON")
-                
+
                 # Enable WAL mode for better concurrent performance (skip for memory db)
                 if self.db_path != ":memory:":
                     conn.execute("PRAGMA journal_mode=WAL")
@@ -101,11 +101,11 @@ class ThinkingDatabase:
 
                 # Create tables
                 self._create_tables(conn)
-                
+
                 # Initialize performance optimizations after tables are created
                 if self.performance_optimizer:
                     self.performance_optimizer.initialize_after_tables_created()
-                
+
                 logger.info("Database initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
@@ -718,14 +718,16 @@ class ThinkingDatabase:
             logger.error(f"Error cleaning up old sessions: {e}")
             return 0
 
-    def export_session_data(self, session_id: str, include_sensitive: bool = False) -> Optional[Dict[str, Any]]:
+    def export_session_data(
+        self, session_id: str, include_sensitive: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """
         Export complete session data for backup or analysis
-        
+
         Args:
             session_id: Session to export
             include_sensitive: Whether to include encrypted/sensitive data
-            
+
         Returns:
             Complete session data or None if not found
         """
@@ -733,10 +735,10 @@ class ThinkingDatabase:
             session_data = self.get_session(session_id)
             if not session_data:
                 return None
-                
+
             steps = self.get_session_steps(session_id)
             results = self.get_step_results(session_id)
-            
+
             export_data = {
                 "session": session_data,
                 "steps": steps,
@@ -744,31 +746,31 @@ class ThinkingDatabase:
                 "export_timestamp": datetime.now().isoformat(),
                 "encryption_enabled": self.encryption is not None,
             }
-            
+
             # Remove sensitive data if requested
             if not include_sensitive and self.encryption:
                 # Remove encrypted fields
                 if "topic_encrypted" in export_data["session"]:
                     export_data["session"].pop("topic_encrypted", None)
-                    
+
                 # Clear sensitive step data
                 for step in export_data["steps"]:
                     step["input_data"] = {"redacted": True}
                     step["output_data"] = {"redacted": True}
-                    
+
                 for result in export_data["results"]:
                     result["content"] = "[REDACTED]"
-            
+
             return export_data
-            
+
         except Exception as e:
             logger.error(f"Error exporting session {session_id}: {e}")
             return None
-    
+
     def get_performance_metrics(self) -> Dict[str, Any]:
         """
         Get comprehensive database performance metrics
-        
+
         Returns:
             Dictionary with performance metrics
         """
@@ -776,15 +778,16 @@ class ThinkingDatabase:
             "database_info": {
                 "db_path": str(self.db_path),
                 "encryption_enabled": self.encryption is not None,
-                "performance_optimization_enabled": self.performance_optimizer is not None
+                "performance_optimization_enabled": self.performance_optimizer
+                is not None,
             }
         }
-        
+
         # Add performance optimizer metrics if available
         if self.performance_optimizer:
             optimizer_metrics = self.performance_optimizer.get_performance_metrics()
             metrics.update(optimizer_metrics)
-        
+
         # Add basic database stats
         try:
             basic_stats = self.get_database_stats()
@@ -792,9 +795,9 @@ class ThinkingDatabase:
         except Exception as e:
             logger.error(f"Error getting basic database stats: {e}")
             metrics["basic_stats"] = {}
-        
+
         return metrics
-    
+
     def optimize_database_performance(self):
         """Optimize database performance"""
         if self.performance_optimizer:
@@ -805,7 +808,7 @@ class ThinkingDatabase:
                 logger.error(f"Error during database optimization: {e}")
         else:
             logger.warning("Performance optimizer not enabled")
-    
+
     def analyze_performance(self):
         """Analyze database performance and suggest optimizations"""
         if self.performance_optimizer:
@@ -816,15 +819,15 @@ class ThinkingDatabase:
                 logger.error(f"Error during performance analysis: {e}")
         else:
             logger.warning("Performance optimizer not enabled")
-    
+
     def execute_optimized_query(self, query: str, params: tuple = ()) -> sqlite3.Cursor:
         """
         Execute query with performance optimization and monitoring
-        
+
         Args:
             query: SQL query to execute
             params: Query parameters
-            
+
         Returns:
             Query cursor
         """
@@ -834,7 +837,7 @@ class ThinkingDatabase:
             # Fallback to regular execution
             with self.get_connection() as conn:
                 return conn.execute(query, params)
-    
+
     def shutdown(self):
         """Shutdown the database and cleanup resources"""
         try:
@@ -842,11 +845,11 @@ class ThinkingDatabase:
             if self._memory_conn:
                 self._memory_conn.close()
                 self._memory_conn = None
-            
+
             # Shutdown performance optimizer
             if self.performance_optimizer:
                 self.performance_optimizer.shutdown()
-            
+
             logger.info("Database shutdown complete")
         except Exception as e:
             logger.error(f"Error during database shutdown: {e}")
@@ -854,10 +857,10 @@ class ThinkingDatabase:
     def backup_database(self, backup_path: str) -> bool:
         """
         Create a backup of the database
-        
+
         Args:
             backup_path: Path for the backup file
-            
+
         Returns:
             True if successful
         """
@@ -865,16 +868,16 @@ class ThinkingDatabase:
             if self.db_path == ":memory:":
                 logger.warning("Cannot backup in-memory database")
                 return False
-                
+
             import shutil
-            
+
             # Create backup with timestamp
             backup_file = f"{backup_path}.{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
             shutil.copy2(self.db_path, backup_file)
-            
+
             logger.info(f"Database backed up to {backup_file}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error backing up database: {e}")
             return False
@@ -882,7 +885,7 @@ class ThinkingDatabase:
     def verify_data_integrity(self) -> Dict[str, Any]:
         """
         Verify database integrity and consistency
-        
+
         Returns:
             Integrity check results
         """
@@ -893,65 +896,85 @@ class ThinkingDatabase:
                     "foreign_key_violations": [],
                     "orphaned_records": [],
                     "data_consistency": True,
-                    "check_timestamp": datetime.now().isoformat()
+                    "check_timestamp": datetime.now().isoformat(),
                 }
-                
+
                 # Check database integrity
                 cursor = conn.execute("PRAGMA integrity_check")
                 integrity_check = cursor.fetchall()
                 if len(integrity_check) > 1 or integrity_check[0][0] != "ok":
                     integrity_results["database_integrity"] = False
-                    integrity_results["integrity_errors"] = [row[0] for row in integrity_check]
-                
+                    integrity_results["integrity_errors"] = [
+                        row[0] for row in integrity_check
+                    ]
+
                 # Check foreign key constraints
                 cursor = conn.execute("PRAGMA foreign_key_check")
                 fk_violations = cursor.fetchall()
                 if fk_violations:
                     integrity_results["foreign_key_violations"] = [
-                        {"table": row[0], "rowid": row[1], "parent": row[2], "fkid": row[3]}
+                        {
+                            "table": row[0],
+                            "rowid": row[1],
+                            "parent": row[2],
+                            "fkid": row[3],
+                        }
                         for row in fk_violations
                     ]
-                
+
                 # Check for orphaned session steps
-                cursor = conn.execute("""
+                cursor = conn.execute(
+                    """
                     SELECT ss.id, ss.session_id 
                     FROM session_steps ss 
                     LEFT JOIN thinking_sessions ts ON ss.session_id = ts.id 
                     WHERE ts.id IS NULL
-                """)
+                """
+                )
                 orphaned_steps = cursor.fetchall()
                 if orphaned_steps:
-                    integrity_results["orphaned_records"].extend([
-                        {"type": "session_step", "id": row[0], "session_id": row[1]}
-                        for row in orphaned_steps
-                    ])
-                
+                    integrity_results["orphaned_records"].extend(
+                        [
+                            {"type": "session_step", "id": row[0], "session_id": row[1]}
+                            for row in orphaned_steps
+                        ]
+                    )
+
                 # Check for orphaned step results
-                cursor = conn.execute("""
+                cursor = conn.execute(
+                    """
                     SELECT sr.id, sr.session_id, sr.step_id
                     FROM step_results sr 
                     LEFT JOIN session_steps ss ON sr.step_id = ss.id 
                     WHERE ss.id IS NULL
-                """)
+                """
+                )
                 orphaned_results = cursor.fetchall()
                 if orphaned_results:
-                    integrity_results["orphaned_records"].extend([
-                        {"type": "step_result", "id": row[0], "session_id": row[1], "step_id": row[2]}
-                        for row in orphaned_results
-                    ])
-                
+                    integrity_results["orphaned_records"].extend(
+                        [
+                            {
+                                "type": "step_result",
+                                "id": row[0],
+                                "session_id": row[1],
+                                "step_id": row[2],
+                            }
+                            for row in orphaned_results
+                        ]
+                    )
+
                 # Update overall consistency status
                 integrity_results["data_consistency"] = (
-                    len(integrity_results["foreign_key_violations"]) == 0 and
-                    len(integrity_results["orphaned_records"]) == 0
+                    len(integrity_results["foreign_key_violations"]) == 0
+                    and len(integrity_results["orphaned_records"]) == 0
                 )
-                
+
                 return integrity_results
-                
+
         except Exception as e:
             logger.error(f"Error verifying data integrity: {e}")
             return {
                 "database_integrity": False,
                 "error": str(e),
-                "check_timestamp": datetime.now().isoformat()
+                "check_timestamp": datetime.now().isoformat(),
             }

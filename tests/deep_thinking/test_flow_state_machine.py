@@ -8,7 +8,10 @@ from unittest.mock import MagicMock, patch
 
 from src.mcps.deep_thinking.config.exceptions import InvalidTransitionError
 from src.mcps.deep_thinking.flows.flow_manager import (
-    FlowManager, FlowStatus, FlowStepStatus, ThinkingFlow
+    FlowManager,
+    FlowStatus,
+    FlowStepStatus,
+    ThinkingFlow,
 )
 from src.mcps.deep_thinking.flows.flow_state_machine import FlowStateMachine, FlowEvent
 
@@ -100,33 +103,29 @@ class TestFlowStateMachine:
         flow = ThinkingFlow(
             flow_id="test-manual-override-flow",
             flow_name="Test Manual Override Flow",
-            session_id="test-session-manual-override"
+            session_id="test-session-manual-override",
         )
-        
+
         # Manually set the flow status to COMPLETED
         flow.status = FlowStatus.COMPLETED
-        
+
         # Verify that the status was set correctly
         assert flow.status == FlowStatus.COMPLETED
-        
+
         # Use manual override to force a transition to RUNNING
         new_state, success = state_machine.transition(
-            flow,
-            FlowEvent.MANUAL_OVERRIDE,
-            {"target_state": FlowStatus.RUNNING}
+            flow, FlowEvent.MANUAL_OVERRIDE, {"target_state": FlowStatus.RUNNING}
         )
-        
+
         # Check that the flow status was updated
         assert flow.status == FlowStatus.RUNNING
         assert success is True
-        
+
         # Use manual override to force a transition back to COMPLETED
         new_state, success = state_machine.transition(
-            flow,
-            FlowEvent.MANUAL_OVERRIDE,
-            {"target_state": FlowStatus.COMPLETED}
+            flow, FlowEvent.MANUAL_OVERRIDE, {"target_state": FlowStatus.COMPLETED}
         )
-        
+
         # Check that the flow status was updated
         assert flow.status == FlowStatus.COMPLETED
         assert success is True
@@ -135,10 +134,10 @@ class TestFlowStateMachine:
         """Test step completion transitions"""
         # Start the flow
         state_machine.transition(test_flow, FlowEvent.START)
-        
+
         # Get first step
         first_step = list(test_flow.steps.values())[0]
-        
+
         # Complete the step
         new_state, success = state_machine.transition(
             test_flow,
@@ -146,10 +145,10 @@ class TestFlowStateMachine:
             {
                 "step_id": first_step.step_id,
                 "result": "Step completed successfully",
-                "quality_score": 0.9
-            }
+                "quality_score": 0.9,
+            },
         )
-        
+
         assert new_state == FlowStatus.RUNNING  # Flow stays in running state
         assert success is True
         assert first_step.status == FlowStepStatus.COMPLETED
@@ -160,20 +159,20 @@ class TestFlowStateMachine:
         """Test step failure transitions"""
         # Start the flow
         state_machine.transition(test_flow, FlowEvent.START)
-        
+
         # Get first step
         first_step = list(test_flow.steps.values())[0]
-        
+
         # Fail the step
         new_state, success = state_machine.transition(
             test_flow,
             FlowEvent.FAIL_STEP,
             {
                 "step_id": first_step.step_id,
-                "error_message": "Step failed due to error"
-            }
+                "error_message": "Step failed due to error",
+            },
         )
-        
+
         assert new_state == FlowStatus.RUNNING  # Flow stays in running state
         assert success is True
         assert first_step.status == FlowStepStatus.FAILED
@@ -184,13 +183,13 @@ class TestFlowStateMachine:
         """Test critical step failure causing flow failure"""
         # Start the flow
         state_machine.transition(test_flow, FlowEvent.START)
-        
+
         # Get first step
         first_step = list(test_flow.steps.values())[0]
-        
+
         # Set max retries to 0 to force immediate failure
         first_step.max_retries = 0
-        
+
         # Fail the step as critical
         new_state, success = state_machine.transition(
             test_flow,
@@ -198,13 +197,13 @@ class TestFlowStateMachine:
             {
                 "step_id": first_step.step_id,
                 "error_message": "Critical step failed",
-                "critical": True
-            }
+                "critical": True,
+            },
         )
-        
+
         # The flow should still be in running state after the step failure
         assert new_state == FlowStatus.RUNNING
-        
+
         # But the step should be failed
         assert first_step.status == FlowStepStatus.FAILED
         assert first_step.error_message == "Critical step failed"
@@ -217,21 +216,21 @@ class TestFlowStateMachine:
         state_machine.transition(test_flow, FlowEvent.START)
         state_machine.transition(test_flow, FlowEvent.PAUSE)
         state_machine.transition(test_flow, FlowEvent.RESUME)
-        
+
         # Check history
         history = state_machine.get_state_history(test_flow.flow_id)
         assert len(history) == 3
-        
+
         # Check first transition
         assert history[0]["from_state"] == FlowStatus.INITIALIZED.value
         assert history[0]["to_state"] == FlowStatus.RUNNING.value
         assert history[0]["event"] == FlowEvent.START.value
-        
+
         # Check second transition
         assert history[1]["from_state"] == FlowStatus.RUNNING.value
         assert history[1]["to_state"] == FlowStatus.PAUSED.value
         assert history[1]["event"] == FlowEvent.PAUSE.value
-        
+
         # Check third transition
         assert history[2]["from_state"] == FlowStatus.PAUSED.value
         assert history[2]["to_state"] == FlowStatus.RUNNING.value
@@ -242,7 +241,7 @@ class TestFlowStateMachine:
         # Initial state is INITIALIZED
         assert state_machine.can_transition(test_flow, FlowEvent.START) is True
         assert state_machine.can_transition(test_flow, FlowEvent.PAUSE) is False
-        
+
         # After starting
         state_machine.transition(test_flow, FlowEvent.START)
         assert state_machine.can_transition(test_flow, FlowEvent.PAUSE) is True
@@ -256,21 +255,21 @@ class TestFlowStateMachine:
         state_machine.transition(
             test_flow,
             FlowEvent.COMPLETE_STEP,
-            {"step_id": first_step.step_id, "result": "Completed"}
+            {"step_id": first_step.step_id, "result": "Completed"},
         )
-        
+
         # Verify step is completed
         assert first_step.status == FlowStepStatus.COMPLETED
         assert first_step.result == "Completed"
-        
+
         # Reset the flow
         success = state_machine.reset_flow(test_flow)
         assert success is True
-        
+
         # Verify flow is reset
         assert test_flow.status == FlowStatus.INITIALIZED
         assert test_flow.start_time is None
-        
+
         # Verify step is reset
         assert first_step.status == FlowStepStatus.PENDING
         assert first_step.result is None
@@ -285,12 +284,16 @@ class TestFlowStateMachine:
         state_machine.transition(
             test_flow,
             FlowEvent.COMPLETE_STEP,
-            {"step_id": first_step.step_id, "result": "Completed", "quality_score": 0.85}
+            {
+                "step_id": first_step.step_id,
+                "result": "Completed",
+                "quality_score": 0.85,
+            },
         )
-        
+
         # Get summary
         summary = state_machine.get_flow_state_summary(test_flow)
-        
+
         # Check summary contents
         assert summary["flow_id"] == test_flow.flow_id
         assert summary["session_id"] == test_flow.session_id
@@ -303,49 +306,51 @@ class TestFlowStateMachine:
         assert "valid_transitions" in summary
         assert FlowEvent.PAUSE.value in summary["valid_transitions"]
 
-    @patch('src.mcps.deep_thinking.data.database.ThinkingDatabase')
+    @patch("src.mcps.deep_thinking.data.database.ThinkingDatabase")
     def test_state_persistence(self, mock_db, test_flow):
         """Test state persistence to database"""
         # Create mock database
         mock_db_instance = MagicMock()
         mock_db.return_value = mock_db_instance
-        
+
         # Create state machine with mock database
         state_machine = FlowStateMachine(mock_db_instance)
-        
+
         # Perform transitions
         state_machine.transition(test_flow, FlowEvent.START)
-        
+
         # Check that database was called
         mock_db_instance.update_session.assert_called()
-        
+
         # Get the arguments from the last call
         args, kwargs = mock_db_instance.update_session.call_args_list[0]
-        
+
         # Check that session ID was passed
         assert args[0] == test_flow.session_id
-        
+
         # Check that status was updated
         assert "status" in kwargs
         assert kwargs["status"] == FlowStatus.RUNNING.value
         assert kwargs["context"]["flow_state"] is not None
 
-    @patch('src.mcps.deep_thinking.data.database.ThinkingDatabase')
+    @patch("src.mcps.deep_thinking.data.database.ThinkingDatabase")
     def test_restore_flow_state(self, mock_db, flow_manager):
         """Test flow state restoration from database"""
         # Create mock database
         mock_db_instance = MagicMock()
-        
+
         # Setup mock to return session data
         session_id = "test-restore-session"
         flow_id = f"{session_id}_quick_analysis_20250720"
-        
+
         # Create a flow to get realistic flow data
-        flow = flow_manager.get_flow(flow_manager.create_flow(session_id, "quick_analysis"))
+        flow = flow_manager.get_flow(
+            flow_manager.create_flow(session_id, "quick_analysis")
+        )
         flow.start()
         first_step = list(flow.steps.values())[0]
         first_step.complete("Step completed", 0.9)
-        
+
         # Mock the database response
         mock_db_instance.get_session.return_value = {
             "id": session_id,
@@ -364,28 +369,30 @@ class TestFlowStateMachine:
                         "metadata": {},
                     }
                 ]
-            }
+            },
         }
-        
+
         # Create state machine with mock database
         state_machine = FlowStateMachine(mock_db_instance)
-        
+
         # Restore flow state
         restored_flow = state_machine.restore_flow_state(flow_id, session_id)
-        
+
         # Check that database was called
         mock_db_instance.get_session.assert_called_with(session_id)
-        
+
         # Check restored flow
         assert restored_flow is not None
         assert restored_flow.flow_id == flow_id
         assert restored_flow.session_id == session_id
         assert restored_flow.status == FlowStatus.RUNNING
-        
+
         # Check that steps were restored
         assert len(restored_flow.steps) > 0
         assert first_step.step_id in restored_flow.steps
-        assert restored_flow.steps[first_step.step_id].status == FlowStepStatus.COMPLETED
+        assert (
+            restored_flow.steps[first_step.step_id].status == FlowStepStatus.COMPLETED
+        )
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class MCPErrorHandler:
     """
     Comprehensive error handler for MCP tools
-    
+
     Provides error recovery mechanisms and prompt templates for various failure scenarios
     """
 
@@ -226,13 +226,13 @@ class MCPErrorHandler:
     ) -> MCPToolOutput:
         """
         Handle MCP tool errors and return appropriate recovery prompt
-        
+
         Args:
             tool_name: Name of the tool that failed
             error: The exception that occurred
             session_id: Session ID if available
             context: Additional context information
-            
+
         Returns:
             MCPToolOutput with error recovery prompt
         """
@@ -246,7 +246,7 @@ class MCPErrorHandler:
                     "error_type": type(error).__name__,
                     "context": context,
                     "traceback": traceback.format_exc(),
-                }
+                },
             )
 
             # Determine error type and create appropriate response
@@ -261,7 +261,10 @@ class MCPErrorHandler:
             # Fallback error handling if the handler itself fails
             logger.critical(
                 f"Error handler failed: {str(handler_error)}",
-                extra={"original_error": str(error), "handler_error": str(handler_error)}
+                extra={
+                    "original_error": str(error),
+                    "handler_error": str(handler_error),
+                },
             )
             return self._create_fallback_response(tool_name, error, session_id)
 
@@ -295,7 +298,7 @@ class MCPErrorHandler:
         context: Optional[Dict[str, Any]],
     ) -> MCPToolOutput:
         """Create appropriate recovery response based on error type"""
-        
+
         if error_type == "session_not_found":
             return self._handle_session_not_found(session_id, context)
         elif error_type == "invalid_step_result":
@@ -331,7 +334,7 @@ class MCPErrorHandler:
             "original_session_id": session_id,
             "recovery_options": ["restart", "quick_analysis", "manual_recovery"],
         }
-        
+
         # Include original context if provided
         if context:
             error_context.update({f"original_{k}": v for k, v in context.items()})
@@ -357,14 +360,22 @@ class MCPErrorHandler:
     ) -> MCPToolOutput:
         """Handle format validation failure"""
         step_name = context.get("step_name", "unknown") if context else "unknown"
-        format_issues = context.get("format_issues", ["格式不正确"]) if context else ["格式不正确"]
-        expected_format = context.get("expected_format", "请参考文档格式要求") if context else "请参考文档格式要求"
+        format_issues = (
+            context.get("format_issues", ["格式不正确"]) if context else ["格式不正确"]
+        )
+        expected_format = (
+            context.get("expected_format", "请参考文档格式要求")
+            if context
+            else "请参考文档格式要求"
+        )
 
         template_params = {
             "step_name": step_name,
             "format_issues": "\n".join(f"- {issue}" for issue in format_issues),
             "expected_format": expected_format,
-            "improvement_suggestions": self._generate_format_improvement_suggestions(step_name),
+            "improvement_suggestions": self._generate_format_improvement_suggestions(
+                step_name
+            ),
             "format_hint": self._get_format_hint(step_name),
         }
 
@@ -395,10 +406,15 @@ class MCPErrorHandler:
         )
 
     def _handle_template_missing(
-        self, tool_name: str, session_id: Optional[str], context: Optional[Dict[str, Any]]
+        self,
+        tool_name: str,
+        session_id: Optional[str],
+        context: Optional[Dict[str, Any]],
     ) -> MCPToolOutput:
         """Handle missing template error"""
-        template_name = context.get("template_name", "unknown") if context else "unknown"
+        template_name = (
+            context.get("template_name", "unknown") if context else "unknown"
+        )
         step_name = context.get("step_name", "unknown") if context else "unknown"
 
         template_params = {
@@ -439,7 +455,7 @@ class MCPErrorHandler:
         # Try to get actual session state from database
         current_step = "unknown"
         completed_steps = []
-        
+
         if session_id:
             try:
                 session = self.session_manager.get_session(session_id)
@@ -447,23 +463,31 @@ class MCPErrorHandler:
                     current_step = session.current_step or "unknown"
                     # Get completed steps from database
                     steps = self.session_manager.db.get_session_steps(session_id)
-                    completed_steps = [step["step_name"] for step in steps if step.get("status") == "completed"]
+                    completed_steps = [
+                        step["step_name"]
+                        for step in steps
+                        if step.get("status") == "completed"
+                    ]
             except Exception as e:
                 logger.warning(f"Could not retrieve session state for recovery: {e}")
-        
+
         # Fallback to context if available
         if current_step == "unknown" and context:
             current_step = context.get("current_step", "unknown")
         if not completed_steps and context:
             completed_steps = context.get("completed_steps", [])
-        
+
         template_params = {
             "session_id": session_id or "unknown",
             "current_step": current_step,
             "completed_steps": ", ".join(completed_steps) if completed_steps else "无",
             "progress_summary": self._generate_progress_summary(completed_steps),
-            "quality_status": context.get("quality_status", "未知") if context else "未知",
-            "next_step_recommendation": self._get_next_step_recommendation(current_step),
+            "quality_status": (
+                context.get("quality_status", "未知") if context else "未知"
+            ),
+            "next_step_recommendation": self._get_next_step_recommendation(
+                current_step
+            ),
             "previous_step": completed_steps[-1] if completed_steps else "无",
         }
 
@@ -500,7 +524,9 @@ class MCPErrorHandler:
         step_name = context.get("step_name", "unknown") if context else "unknown"
         quality_score = context.get("quality_score", 0) if context else 0
         quality_threshold = context.get("quality_threshold", 7) if context else 7
-        quality_issues = context.get("quality_issues", ["质量不达标"]) if context else ["质量不达标"]
+        quality_issues = (
+            context.get("quality_issues", ["质量不达标"]) if context else ["质量不达标"]
+        )
 
         template_params = {
             "step_name": step_name,
@@ -509,7 +535,9 @@ class MCPErrorHandler:
             "quality_issues": "\n".join(f"- {issue}" for issue in quality_issues),
             "depth_suggestions": self._get_depth_improvement_suggestions(step_name),
             "logic_suggestions": self._get_logic_improvement_suggestions(step_name),
-            "evidence_suggestions": self._get_evidence_improvement_suggestions(step_name),
+            "evidence_suggestions": self._get_evidence_improvement_suggestions(
+                step_name
+            ),
             "breadth_suggestions": self._get_breadth_improvement_suggestions(step_name),
         }
 
@@ -544,7 +572,9 @@ class MCPErrorHandler:
         self, session_id: Optional[str], context: Optional[Dict[str, Any]]
     ) -> MCPToolOutput:
         """Handle session timeout error"""
-        timeout_duration = context.get("timeout_duration", "未知") if context else "未知"
+        timeout_duration = (
+            context.get("timeout_duration", "未知") if context else "未知"
+        )
         last_activity = context.get("last_activity", "未知") if context else "未知"
 
         template_params = {
@@ -627,7 +657,7 @@ class MCPErrorHandler:
             "recovery_options": ["retry", "skip", "alternative", "restart"],
             "recovery_mode": True,
         }
-        
+
         # Include original context if provided
         if context:
             error_context.update({f"original_{k}": v for k, v in context.items()})
@@ -697,11 +727,11 @@ class MCPErrorHandler:
     ) -> bool:
         """
         Attempt to recover session state from provided data
-        
+
         Args:
             session_id: Session ID to recover
             recovery_data: Data to use for recovery
-            
+
         Returns:
             True if recovery successful, False otherwise
         """
@@ -713,12 +743,12 @@ class MCPErrorHandler:
 
             # Attempt to recover session
             success = self.session_manager.recover_session(session_id, recovery_data)
-            
+
             if success:
                 logger.info(f"Successfully recovered session {session_id}")
             else:
                 logger.warning(f"Failed to recover session {session_id}")
-                
+
             return success
 
         except Exception as e:
@@ -760,7 +790,7 @@ class MCPErrorHandler:
         """Generate progress summary from completed steps"""
         if not completed_steps:
             return "尚未完成任何步骤"
-        
+
         step_descriptions = {
             "decompose_problem": "问题分解",
             "collect_evidence": "证据收集",
@@ -770,7 +800,7 @@ class MCPErrorHandler:
             "innovation_thinking": "创新思维",
             "reflection": "反思总结",
         }
-        
+
         completed_descriptions = [
             step_descriptions.get(step, step) for step in completed_steps
         ]

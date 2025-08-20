@@ -10,13 +10,13 @@ from typing import Dict, Any
 def get_bias_detection_template(params: Dict[str, Any]) -> str:
     """
     Get the bias detection template with the specified parameters.
-    
+
     Args:
         params: Dictionary containing template parameters:
             - content: The content to be analyzed for biases
             - context: The context of the analysis
             - complexity: The complexity level (high, medium, low)
-    
+
     Returns:
         str: The formatted template
     """
@@ -24,7 +24,7 @@ def get_bias_detection_template(params: Dict[str, Any]) -> str:
     content = params.get("content", "[content]")
     context = params.get("context", "[context]")
     complexity = params.get("complexity", "medium")
-    
+
     # Select the appropriate template based on complexity
     if complexity.lower() in ["high", "高"]:
         return get_high_complexity_template(content, context)
@@ -37,11 +37,11 @@ def get_bias_detection_template(params: Dict[str, Any]) -> str:
 def get_high_complexity_template(content: str, context: str) -> str:
     """
     Get the high complexity bias detection template.
-    
+
     Args:
         content: The content to be analyzed
         context: The context of the analysis
-    
+
     Returns:
         str: The formatted template
     """
@@ -279,11 +279,11 @@ def get_high_complexity_template(content: str, context: str) -> str:
 def get_medium_complexity_template(content: str, context: str) -> str:
     """
     Get the medium complexity bias detection template.
-    
+
     Args:
         content: The content to be analyzed
         context: The context of the analysis
-    
+
     Returns:
         str: The formatted template
     """
@@ -468,11 +468,11 @@ def get_medium_complexity_template(content: str, context: str) -> str:
 def get_low_complexity_template(content: str, context: str) -> str:
     """
     Get the low complexity bias detection template.
-    
+
     Args:
         content: The content to be analyzed
         context: The context of the analysis
-    
+
     Returns:
         str: The formatted template
     """

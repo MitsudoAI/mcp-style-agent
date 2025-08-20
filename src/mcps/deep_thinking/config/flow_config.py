@@ -43,7 +43,7 @@ class FlowConfigManager:
 
         # Load flows from config manager
         flows_config = self.config_manager.get_config("flows", {})
-        
+
         # Parse flows from config
         for flow_name, flow_data in flows_config.items():
             if flow_name.startswith("_"):  # Skip metadata fields
@@ -53,12 +53,12 @@ class FlowConfigManager:
                 await self._load_flow(flow_name, flow_data)
             except Exception as e:
                 logger.error(f"Failed to load flow '{flow_name}': {e}")
-        
+
         # Load flows from YAML files in config directory
         if self.config_manager and hasattr(self.config_manager, "config_dir"):
             config_dir = Path(self.config_manager.config_dir)
             flows_dir = config_dir / "flows"
-            
+
             if flows_dir.exists() and flows_dir.is_dir():
                 for file_path in flows_dir.glob("*.yaml"):
                     try:
@@ -70,11 +70,11 @@ class FlowConfigManager:
         """Load flows from a YAML file"""
         try:
             parsed_flows = self.yaml_parser.parse_file(file_path)
-            
+
             for flow_name, flow in parsed_flows.items():
                 self.flows[flow_name] = flow
                 logger.info(f"Loaded flow configuration from file: {flow_name}")
-                
+
         except Exception as e:
             logger.error(f"Failed to load flows from file {file_path}: {e}")
             raise
@@ -85,7 +85,7 @@ class FlowConfigManager:
             # Use YAML parser to parse the flow
             flow_dict = {flow_name: flow_data}
             parsed_flows = self.yaml_parser.parse_yaml(flow_dict)
-            
+
             if flow_name in parsed_flows:
                 self.flows[flow_name] = parsed_flows[flow_name]
                 logger.info(f"Loaded flow configuration: {flow_name}")
@@ -256,28 +256,28 @@ class FlowConfigManager:
             return data
         else:
             return data
-            
+
     def evaluate_condition(self, condition: str, context: Dict[str, Any]) -> bool:
         """
         Evaluate a condition expression using the YAML parser
-        
+
         Args:
             condition: Condition expression (e.g., "score >= 0.8")
             context: Evaluation context with variables
-            
+
         Returns:
             bool: Result of condition evaluation
         """
         return self.yaml_parser.evaluate_condition(condition, context)
-        
+
     def resolve_references(self, expression: str, context: Dict[str, Any]) -> Any:
         """
         Resolve variable references in an expression using the YAML parser
-        
+
         Args:
             expression: Expression with variable references
             context: Context with variable values
-            
+
         Returns:
             Any: Resolved value
         """

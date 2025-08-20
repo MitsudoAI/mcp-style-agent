@@ -12,14 +12,14 @@ from typing import Dict, Any
 def get_reflection_template(params: Dict[str, Any]) -> str:
     """
     Get the reflection template with the specified parameters.
-    
+
     Args:
         params: Dictionary containing template parameters:
             - topic: The thinking topic being reflected upon
             - thinking_history: Summary of the thinking process so far
             - current_conclusions: Current conclusions or insights
             - complexity: The complexity level (high, medium, low)
-    
+
     Returns:
         str: The formatted template
     """
@@ -28,25 +28,31 @@ def get_reflection_template(params: Dict[str, Any]) -> str:
     thinking_history = params.get("thinking_history", "[thinking_history]")
     current_conclusions = params.get("current_conclusions", "[current_conclusions]")
     complexity = params.get("complexity", "medium")
-    
+
     # Select the appropriate template based on complexity
     if complexity.lower() in ["high", "高"]:
-        return get_high_complexity_template(topic, thinking_history, current_conclusions)
+        return get_high_complexity_template(
+            topic, thinking_history, current_conclusions
+        )
     elif complexity.lower() in ["low", "低"]:
         return get_low_complexity_template(topic, thinking_history, current_conclusions)
     else:  # Default to medium
-        return get_medium_complexity_template(topic, thinking_history, current_conclusions)
+        return get_medium_complexity_template(
+            topic, thinking_history, current_conclusions
+        )
 
 
-def get_high_complexity_template(topic: str, thinking_history: str, current_conclusions: str) -> str:
+def get_high_complexity_template(
+    topic: str, thinking_history: str, current_conclusions: str
+) -> str:
     """
     Get the high complexity reflection template.
-    
+
     Args:
         topic: The thinking topic being reflected upon
         thinking_history: Summary of the thinking process so far
         current_conclusions: Current conclusions or insights
-    
+
     Returns:
         str: The formatted template
     """
@@ -462,15 +468,17 @@ def get_high_complexity_template(topic: str, thinking_history: str, current_conc
     return template
 
 
-def get_medium_complexity_template(topic: str, thinking_history: str, current_conclusions: str) -> str:
+def get_medium_complexity_template(
+    topic: str, thinking_history: str, current_conclusions: str
+) -> str:
     """
     Get the medium complexity reflection template.
-    
+
     Args:
         topic: The thinking topic being reflected upon
         thinking_history: Summary of the thinking process so far
         current_conclusions: Current conclusions or insights
-    
+
     Returns:
         str: The formatted template
     """
@@ -675,15 +683,17 @@ def get_medium_complexity_template(topic: str, thinking_history: str, current_co
     return template
 
 
-def get_low_complexity_template(topic: str, thinking_history: str, current_conclusions: str) -> str:
+def get_low_complexity_template(
+    topic: str, thinking_history: str, current_conclusions: str
+) -> str:
     """
     Get the low complexity reflection template.
-    
+
     Args:
         topic: The thinking topic being reflected upon
         thinking_history: Summary of the thinking process so far
         current_conclusions: Current conclusions or insights
-    
+
     Returns:
         str: The formatted template
     """

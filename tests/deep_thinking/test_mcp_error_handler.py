@@ -100,14 +100,11 @@ class TestMCPErrorHandler:
         """Test handling session not found error"""
         session_id = "test-session-123"
         error = SessionNotFoundError("Session not found", session_id=session_id)
-        
+
         result = error_handler.handle_mcp_error(
-            tool_name="test_tool",
-            error=error,
-            session_id=session_id,
-            context={}
+            tool_name="test_tool", error=error, session_id=session_id, context={}
         )
-        
+
         assert isinstance(result, MCPToolOutput)
         assert result.session_id == session_id
         assert result.step == "session_recovery"
@@ -124,22 +121,22 @@ class TestMCPErrorHandler:
         error = MCPFormatValidationError(
             "Format validation failed",
             step_name=step_name,
-            expected_format="JSON format"
+            expected_format="JSON format",
         )
-        
+
         context = {
             "step_name": step_name,
             "format_issues": ["Missing JSON format", "Invalid structure"],
-            "expected_format": "JSON format with required fields"
+            "expected_format": "JSON format with required fields",
         }
-        
+
         result = error_handler.handle_mcp_error(
             tool_name="format_validator",
             error=error,
             session_id=session_id,
-            context=context
+            context=context,
         )
-        
+
         assert isinstance(result, MCPToolOutput)
         assert result.session_id == session_id
         assert result.step == f"fix_format_{step_name}"
@@ -155,19 +152,16 @@ class TestMCPErrorHandler:
         template_name = "missing_template"
         step_name = "test_step"
         error = TemplateError("Template not found", template_name=template_name)
-        
-        context = {
-            "template_name": template_name,
-            "step_name": step_name
-        }
-        
+
+        context = {"template_name": template_name, "step_name": step_name}
+
         result = error_handler.handle_mcp_error(
             tool_name="template_manager",
             error=error,
             session_id=session_id,
-            context=context
+            context=context,
         )
-        
+
         assert isinstance(result, MCPToolOutput)
         assert result.session_id == session_id
         assert result.step == f"generic_{step_name}"
@@ -182,22 +176,22 @@ class TestMCPErrorHandler:
         session_id = "test-session-123"
         current_step = "evidence_collection"
         completed_steps = ["decompose_problem", "collect_evidence"]
-        
+
         context = {
             "current_step": current_step,
             "completed_steps": completed_steps,
-            "quality_status": "good"
+            "quality_status": "good",
         }
-        
+
         error = Exception("Flow interrupted")
-        
+
         result = error_handler.handle_mcp_error(
             tool_name="flow_manager",
             error=error,
             session_id=session_id,
-            context=context
+            context=context,
         )
-        
+
         assert isinstance(result, MCPToolOutput)
         assert result.session_id == session_id
         assert result.step == "flow_recovery"
@@ -215,28 +209,28 @@ class TestMCPErrorHandler:
         quality_score = 5.5
         quality_threshold = 7.0
         quality_issues = ["Insufficient depth", "Weak evidence"]
-        
+
         context = {
             "step_name": step_name,
             "quality_score": quality_score,
             "quality_threshold": quality_threshold,
-            "quality_issues": quality_issues
+            "quality_issues": quality_issues,
         }
-        
+
         error = MCPQualityGateError(
             "Quality gate failed",
             step_name=step_name,
             quality_score=quality_score,
-            quality_threshold=quality_threshold
+            quality_threshold=quality_threshold,
         )
-        
+
         result = error_handler.handle_mcp_error(
             tool_name="quality_gate",
             error=error,
             session_id=session_id,
-            context=context
+            context=context,
         )
-        
+
         assert isinstance(result, MCPToolOutput)
         assert result.session_id == session_id
         assert result.step == f"improve_{step_name}"
@@ -252,21 +246,18 @@ class TestMCPErrorHandler:
         session_id = "test-session-123"
         timeout_duration = "30 minutes"
         last_activity = "2024-01-01 10:00:00"
-        
-        context = {
-            "timeout_duration": timeout_duration,
-            "last_activity": last_activity
-        }
-        
+
+        context = {"timeout_duration": timeout_duration, "last_activity": last_activity}
+
         error = Exception("Session timeout occurred")
-        
+
         result = error_handler.handle_mcp_error(
             tool_name="session_manager",
             error=error,
             session_id=session_id,
-            context=context
+            context=context,
         )
-        
+
         assert isinstance(result, MCPToolOutput)
         assert result.session_id == session_id
         assert result.step == "timeout_recovery"
@@ -281,14 +272,11 @@ class TestMCPErrorHandler:
         session_id = "test-session-123"
         tool_name = "test_tool"
         error = Exception("Some unexpected error")
-        
+
         result = error_handler.handle_mcp_error(
-            tool_name=tool_name,
-            error=error,
-            session_id=session_id,
-            context={}
+            tool_name=tool_name, error=error, session_id=session_id, context={}
         )
-        
+
         assert isinstance(result, MCPToolOutput)
         assert result.session_id == session_id
         assert result.step == "error_recovery"
@@ -303,16 +291,15 @@ class TestMCPErrorHandler:
         session_id = "test-session-123"
         tool_name = "test_tool"
         error = Exception("Original error")
-        
+
         # Mock the error handler to raise an exception
-        with patch.object(error_handler, '_classify_error', side_effect=Exception("Handler failed")):
+        with patch.object(
+            error_handler, "_classify_error", side_effect=Exception("Handler failed")
+        ):
             result = error_handler.handle_mcp_error(
-                tool_name=tool_name,
-                error=error,
-                session_id=session_id,
-                context={}
+                tool_name=tool_name, error=error, session_id=session_id, context={}
             )
-            
+
             assert isinstance(result, MCPToolOutput)
             assert result.session_id == session_id
             assert result.step == "emergency_recovery"
@@ -329,132 +316,145 @@ class TestMCPErrorHandler:
             "topic": "Test topic",
             "current_step": "evidence_collection",
             "completed_steps": ["decompose_problem"],
-            "context": {"complexity": "moderate"}
+            "context": {"complexity": "moderate"},
         }
-        
+
         mock_session_manager.recover_session.return_value = True
-        
+
         result = error_handler.recover_session_state(session_id, recovery_data)
-        
+
         assert result is True
-        mock_session_manager.recover_session.assert_called_once_with(session_id, recovery_data)
+        mock_session_manager.recover_session.assert_called_once_with(
+            session_id, recovery_data
+        )
 
     def test_recover_session_state_failure(self, error_handler, mock_session_manager):
         """Test failed session state recovery"""
         session_id = "test-session-123"
-        recovery_data = {
-            "topic": "Test topic",
-            "current_step": "evidence_collection"
-        }
-        
+        recovery_data = {"topic": "Test topic", "current_step": "evidence_collection"}
+
         mock_session_manager.recover_session.return_value = False
-        
+
         result = error_handler.recover_session_state(session_id, recovery_data)
-        
+
         assert result is False
-        mock_session_manager.recover_session.assert_called_once_with(session_id, recovery_data)
+        mock_session_manager.recover_session.assert_called_once_with(
+            session_id, recovery_data
+        )
 
     def test_recover_session_state_invalid_data(self, error_handler):
         """Test session recovery with invalid data"""
         session_id = "test-session-123"
         recovery_data = {}  # Missing required fields
-        
+
         result = error_handler.recover_session_state(session_id, recovery_data)
-        
+
         assert result is False
 
     def test_recover_session_state_exception(self, error_handler, mock_session_manager):
         """Test session recovery with exception"""
         session_id = "test-session-123"
-        recovery_data = {
-            "topic": "Test topic",
-            "current_step": "evidence_collection"
-        }
-        
+        recovery_data = {"topic": "Test topic", "current_step": "evidence_collection"}
+
         mock_session_manager.recover_session.side_effect = Exception("Recovery failed")
-        
+
         result = error_handler.recover_session_state(session_id, recovery_data)
-        
+
         assert result is False
 
     def test_format_improvement_suggestions(self, error_handler):
         """Test format improvement suggestions generation"""
-        suggestions = error_handler._generate_format_improvement_suggestions("decompose_problem")
+        suggestions = error_handler._generate_format_improvement_suggestions(
+            "decompose_problem"
+        )
         assert "JSON格式" in suggestions
         assert "main_question" in suggestions
-        
-        suggestions = error_handler._generate_format_improvement_suggestions("collect_evidence")
+
+        suggestions = error_handler._generate_format_improvement_suggestions(
+            "collect_evidence"
+        )
         assert "证据来源" in suggestions
         assert "可信度评估" in suggestions
-        
-        suggestions = error_handler._generate_format_improvement_suggestions("unknown_step")
+
+        suggestions = error_handler._generate_format_improvement_suggestions(
+            "unknown_step"
+        )
         assert "请参考步骤要求" in suggestions
 
     def test_format_hints(self, error_handler):
         """Test format hints generation"""
         hint = error_handler._get_format_hint("decompose_problem")
         assert "JSON格式" in hint
-        
+
         hint = error_handler._get_format_hint("collect_evidence")
         assert "结构化列出证据" in hint
-        
+
         hint = error_handler._get_format_hint("unknown_step")
         assert "参考文档" in hint
 
     def test_progress_summary_generation(self, error_handler):
         """Test progress summary generation"""
-        completed_steps = ["decompose_problem", "collect_evidence", "multi_perspective_debate"]
+        completed_steps = [
+            "decompose_problem",
+            "collect_evidence",
+            "multi_perspective_debate",
+        ]
         summary = error_handler._generate_progress_summary(completed_steps)
-        
+
         assert "问题分解" in summary
         assert "证据收集" in summary
         assert "多角度辩论" in summary
-        
+
         # Test empty steps
         summary = error_handler._generate_progress_summary([])
         assert "尚未完成任何步骤" in summary
 
     def test_next_step_recommendations(self, error_handler):
         """Test next step recommendations"""
-        recommendation = error_handler._get_next_step_recommendation("decompose_problem")
+        recommendation = error_handler._get_next_step_recommendation(
+            "decompose_problem"
+        )
         assert "证据收集" in recommendation
-        
+
         recommendation = error_handler._get_next_step_recommendation("collect_evidence")
         assert "多角度辩论" in recommendation
-        
+
         recommendation = error_handler._get_next_step_recommendation("reflection")
         assert "最终报告" in recommendation
-        
+
         recommendation = error_handler._get_next_step_recommendation("unknown_step")
         assert "继续下一步" in recommendation
 
     def test_improvement_suggestions_generation(self, error_handler):
         """Test improvement suggestions for different aspects"""
-        depth_suggestions = error_handler._get_depth_improvement_suggestions("decompose_problem")
+        depth_suggestions = error_handler._get_depth_improvement_suggestions(
+            "decompose_problem"
+        )
         assert "深入分析" in depth_suggestions
-        
+
         logic_suggestions = error_handler._get_logic_improvement_suggestions("any_step")
         assert "推理过程清晰" in logic_suggestions
-        
-        evidence_suggestions = error_handler._get_evidence_improvement_suggestions("any_step")
+
+        evidence_suggestions = error_handler._get_evidence_improvement_suggestions(
+            "any_step"
+        )
         assert "补充更多可靠证据" in evidence_suggestions
-        
-        breadth_suggestions = error_handler._get_breadth_improvement_suggestions("any_step")
+
+        breadth_suggestions = error_handler._get_breadth_improvement_suggestions(
+            "any_step"
+        )
         assert "考虑更多角度" in breadth_suggestions
 
-    @patch('src.mcps.deep_thinking.tools.mcp_error_handler.logger')
+    @patch("src.mcps.deep_thinking.tools.mcp_error_handler.logger")
     def test_error_logging(self, mock_logger, error_handler):
         """Test that errors are properly logged"""
         session_id = "test-session-123"
         error = Exception("Test error")
-        
+
         error_handler.handle_mcp_error(
-            tool_name="test_tool",
-            error=error,
-            session_id=session_id,
-            context={}
+            tool_name="test_tool", error=error, session_id=session_id, context={}
         )
-        
+
         # Verify error was logged
         mock_logger.error.assert_called()
         call_args = mock_logger.error.call_args[0][0]
@@ -465,13 +465,13 @@ class TestMCPErrorHandler:
         """Test that all required error recovery templates are present"""
         required_templates = [
             "session_not_found",
-            "invalid_step_result", 
+            "invalid_step_result",
             "template_missing",
             "flow_interrupted",
             "quality_gate_failed",
-            "session_timeout"
+            "session_timeout",
         ]
-        
+
         for template_name in required_templates:
             assert template_name in error_handler.error_recovery_templates
             template_content = error_handler.error_recovery_templates[template_name]
@@ -484,18 +484,18 @@ class TestMCPErrorHandler:
         original_context = {
             "step_name": "test_step",
             "custom_data": "important_info",
-            "user_preference": "detailed_analysis"
+            "user_preference": "detailed_analysis",
         }
-        
+
         error = Exception("Test error")
-        
+
         result = error_handler.handle_mcp_error(
             tool_name="test_tool",
             error=error,
             session_id=session_id,
-            context=original_context
+            context=original_context,
         )
-        
+
         # Verify context is preserved and enhanced
         assert result.context["original_tool"] == "test_tool"
         assert result.context["recovery_mode"] is True

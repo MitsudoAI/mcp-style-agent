@@ -30,15 +30,15 @@ class TestInnovationTemplate:
                 "direction": "提高能源效率和用户体验",
                 "constraints": "成本控制，兼容现有设备",
                 "method": "scamper",
-                "complexity": "high"
-            }
+                "complexity": "high",
+            },
         )
-        
+
         # Check that high complexity elements are included
         assert "深度思考：高级创新思维激发" in template
         assert "**思考复杂度**: 高" in template
         assert "多维创新思维框架" in template
-        
+
         # Check that all SCAMPER categories are included with detailed content
         assert "S - Substitute (替代) - 权重: 12%" in template
         assert "C - Combine (结合) - 权重: 12%" in template
@@ -47,19 +47,19 @@ class TestInnovationTemplate:
         assert "P - Put to Other Uses (其他用途) - 权重: 12%" in template
         assert "E - Eliminate (消除) - 权重: 12%" in template
         assert "R - Reverse/Rearrange (逆转/重组) - 权重: 12%" in template
-        
+
         # Check that TRIZ principles are included
         assert "TRIZ创新原理应用 - 权重: 16%" in template
         assert "分割原理 (Segmentation)" in template
         assert "提取原理 (Extraction)" in template
-        
+
         # Check that cross-domain inspiration is included
         assert "跨领域启发 - 权重: 12%" in template
         assert "自然界启发" in template
         assert "艺术与设计启发" in template
         assert "科技前沿启发" in template
         assert "社会科学启发" in template
-        
+
         # Check that detailed evaluation criteria are included
         assert "创新评估与筛选" in template
         assert "新颖性 (Novelty) - 权重: 25%" in template
@@ -67,14 +67,14 @@ class TestInnovationTemplate:
         assert "价值潜力 (Value Potential) - 权重: 25%" in template
         assert "适应性 (Adaptability) - 权重: 15%" in template
         assert "可持续性 (Sustainability) - 权重: 10%" in template
-        
+
         # Check that implementation path and risk analysis are included
         assert "实施路径与风险分析" in template
         assert "短期行动 (0-6个月):" in template
         assert "中期发展 (6-18个月):" in template
         assert "长期愿景 (18+个月):" in template
         assert "风险分析" in template
-        
+
         # Check that meta-analysis is included
         assert "创新思维元分析" in template
 
@@ -87,15 +87,15 @@ class TestInnovationTemplate:
                 "direction": "提高学生参与度和学习效果",
                 "constraints": "适用于低带宽环境，支持移动设备",
                 "method": "scamper",
-                "complexity": "medium"
-            }
+                "complexity": "medium",
+            },
         )
-        
+
         # Check that medium complexity elements are included
         assert "深度思考：创新思维激发" in template
         assert "**思考复杂度**: 中等" in template
         assert "SCAMPER创新技法" in template
-        
+
         # Check that all SCAMPER categories are included with moderate detail
         assert "S - Substitute (替代)" in template
         assert "C - Combine (结合)" in template
@@ -104,26 +104,26 @@ class TestInnovationTemplate:
         assert "P - Put to Other Uses (其他用途)" in template
         assert "E - Eliminate (消除)" in template
         assert "R - Reverse/Rearrange (逆转/重组)" in template
-        
+
         # Check that each category has core questions and thinking directions
         assert "**核心问题**:" in template
         assert "**思考方向**:" in template
         assert "**创新想法**:" in template
-        
+
         # Check that cross-domain inspiration is included
         assert "跨领域启发" in template
         assert "自然界" in template
         assert "艺术与设计" in template
         assert "科技前沿" in template
         assert "社会科学" in template
-        
+
         # Check that evaluation criteria are included
         assert "创新评估" in template
         assert "1. 新颖性 (1-10分)" in template
         assert "2. 可行性 (1-10分)" in template
         assert "3. 价值潜力 (1-10分)" in template
         assert "4. 实施难度 (1-10分，越低越好)" in template
-        
+
         # Check that best innovation plans are included
         assert "最佳创新方案" in template
         assert "方案一：[创新名称]" in template
@@ -139,15 +139,15 @@ class TestInnovationTemplate:
                 "direction": "减少拖延，提高效率",
                 "constraints": "简单易用，无需复杂设置",
                 "method": "scamper",
-                "complexity": "low"
-            }
+                "complexity": "low",
+            },
         )
-        
+
         # Check that low complexity elements are included
         assert "深度思考：基础创新思维" in template
         assert "**思考复杂度**: 低" in template
         assert "简化SCAMPER创新法" in template
-        
+
         # Check that all SCAMPER categories are included with simplified content
         assert "S - 替代 (Substitute)" in template
         assert "C - 结合 (Combine)" in template
@@ -156,22 +156,22 @@ class TestInnovationTemplate:
         assert "P - 其他用途 (Put to other uses)" in template
         assert "E - 简化 (Eliminate)" in template
         assert "R - 重组 (Rearrange)" in template
-        
+
         # Check that each category has simple questions and idea space
         assert "创新想法：" in template
-        
+
         # Check that simplified cross-domain inspiration is included
         assert "跨领域灵感" in template
         assert "自然界启发" in template
         assert "其他行业启发" in template
-        
+
         # Check that simplified evaluation is included
         assert "创新评估" in template
         assert "想法一：[创新名称]" in template
         assert "新颖性 (1-10分)：" in template
         assert "可行性 (1-10分)：" in template
         assert "价值潜力 (1-10分)：" in template
-        
+
         # Check that simplified best innovation plan is included
         assert "最佳创新方案" in template
         assert "推荐方案：[创新名称]" in template
@@ -188,10 +188,10 @@ class TestInnovationTemplate:
                 "direction": "测试方向",
                 "constraints": "测试约束",
                 "method": "scamper",
-                "complexity": "medium"
-            }
+                "complexity": "medium",
+            },
         )
-        
+
         # Check that parameters are correctly inserted
         assert "**基础概念**: 测试概念" in template
         assert "**创新方向**: 测试方向" in template
@@ -205,9 +205,9 @@ class TestInnovationTemplate:
             {
                 "concept": "测试概念"
                 # Missing direction, constraints, method, and complexity
-            }
+            },
         )
-        
+
         # Check that missing parameters are handled gracefully
         assert "**基础概念**: 测试概念" in template
         assert "**创新方向**: [direction]" in template
@@ -225,10 +225,10 @@ class TestInnovationTemplate:
                 "concept": "测试概念",
                 "direction": "测试方向",
                 "constraints": "测试约束",
-                "complexity": "medium"
-            }
+                "complexity": "medium",
+            },
         )
-        
+
         # Check that JSON format is specified
         assert "## JSON输出格式" in template
         assert "```json" in template

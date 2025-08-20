@@ -206,13 +206,17 @@ class FlowStep(BaseModel):
     dependencies: List[str] = Field(
         default_factory=list, description="List of step IDs this step depends on"
     )
-    
+
     # State management fields
-    status: FlowStepStatus = Field(default=FlowStepStatus.PENDING, description="Step status")
+    status: FlowStepStatus = Field(
+        default=FlowStepStatus.PENDING, description="Step status"
+    )
     start_time: Optional[datetime] = Field(default=None, description="Step start time")
     end_time: Optional[datetime] = Field(default=None, description="Step end time")
     result: Optional[str] = Field(default=None, description="Step result")
-    error_message: Optional[str] = Field(default=None, description="Error message if failed")
+    error_message: Optional[str] = Field(
+        default=None, description="Error message if failed"
+    )
     quality_score: Optional[float] = Field(default=None, description="Quality score")
     retry_count: int = Field(default=0, description="Number of retries attempted")
     max_retries: int = Field(default=3, description="Maximum number of retries")
