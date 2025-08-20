@@ -173,6 +173,10 @@ class SessionManager:
                 
                 # Handle special cases for structured for_each tracking
                 self._handle_special_step_results(session, step_name, step_result)
+                
+                # If this is a for_each step (like collect_evidence), increment iteration
+                if self._is_for_each_step(step_name, session):
+                    self._increment_for_each_iteration(session, step_name)
 
             if quality_score is not None:
                 session.quality_scores[step_name] = quality_score
@@ -1721,13 +1725,35 @@ class SessionManager:
         """
         try:
             current_count = session.iteration_count.get(step_name, 0)
-            session.iteration_count[step_name] = current_count + 1
+            new_count = current_count + 1
+            session.iteration_count[step_name] = new_count
             
             total = session.total_iterations.get(step_name, 0)
-            logger.info(f"Incremented {step_name} iteration: {current_count + 1}/{total}")
+            logger.info(f"Incremented {step_name} iteration: {new_count}/{total}")
             
             # Update the session in cache
             self._active_sessions[session.session_id] = session
             
         except Exception as e:
             logger.error(f"Error incrementing for_each iteration for {step_name}: {e}")
+
+    def _is_for_each_step(self, step_name: str, session: "SessionState") -> bool:
+        """
+        Check if a step is configured for for_each processing
+        """
+        try:
+            # Currently we know collect_evidence is a for_each step
+            # In the future, this could be more dynamic based on flow configuration
+            for_each_steps = ["collect_evidence"]
+            
+            # Also check if we have tracking data set up for this step
+            has_tracking = (
+                session.total_iterations.get(step_name, 0) > 0 or 
+                session.decomposition_result is not None
+            )
+            
+            return step_name in for_each_steps and has_tracking
+            
+        except Exception as e:
+            logger.error(f"Error checking if step is for_each: {e}")
+            return False
