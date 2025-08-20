@@ -1664,6 +1664,12 @@ class SessionManager:
             # Handle decomposition step - store structured result for for_each tracking
             if step_name == "decompose" or "decompose" in step_name:
                 self._extract_decomposition_result(session, step_result)
+            
+            # ALSO: Check if the step_result itself contains decomposition data (regardless of step name)
+            # This handles cases where decomposition data comes from previous steps
+            if session.decomposition_result is None and self._contains_decomposition_data(step_result):
+                logger.info("Found decomposition data in step result, extracting...")
+                self._extract_decomposition_result(session, step_result)
                 
         except Exception as e:
             logger.error(f"Error handling special step result for {step_name}: {e}")
@@ -1756,4 +1762,38 @@ class SessionManager:
             
         except Exception as e:
             logger.error(f"Error checking if step is for_each: {e}")
+            return False
+
+    def _contains_decomposition_data(self, step_result: str) -> bool:
+        """
+        Check if step result contains decomposition data (sub_questions)
+        """
+        try:
+            import json
+            
+            # Check for JSON with sub_questions
+            try:
+                data = json.loads(step_result.strip())
+                if isinstance(data, dict) and "sub_questions" in data:
+                    return True
+            except (json.JSONDecodeError, ValueError):
+                pass
+            
+            # Check for text patterns indicating decomposition
+            decomposition_patterns = [
+                "sub_questions",
+                "SQ1", "SQ2", "SQ3",  # Sub-question IDs
+                '"id".*"question"',   # JSON structure
+                "子问题", "分解"
+            ]
+            
+            import re
+            for pattern in decomposition_patterns:
+                if re.search(pattern, step_result, re.IGNORECASE):
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error checking for decomposition data: {e}")
             return False
