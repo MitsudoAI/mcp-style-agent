@@ -707,15 +707,18 @@ class FlowManager:
                 logger.info(f"Found sub-question IDs in result: {unique_sqs}")
 
                 # If we see many SQs (like SQ1-SQ7), it's likely a completion summary
-                if len(unique_sqs) >= 5:
+                if len(unique_sqs) >= 6:  # Raised threshold for 7-question scenarios
                     logger.info(
                         f"Found {len(unique_sqs)} sub-questions, likely completion summary"
                     )
                     return False
 
                 # If we see multiple SQs with checkmarks, it's probably completion
+                # Use higher thresholds to avoid premature termination
                 checkmark_count = step_result.count("✓")
-                if len(unique_sqs) >= 3 and checkmark_count >= 3:
+                if (
+                    len(unique_sqs) >= 6 and checkmark_count >= 6
+                ):  # Much higher threshold
                     logger.info(
                         f"Found {len(unique_sqs)} SQs with {checkmark_count} checkmarks, likely completion"
                     )
@@ -784,7 +787,9 @@ class FlowManager:
                 if "1" in unique_sqs and len(unique_sqs) == 1:
                     logger.info("Only SQ1 processed, continuing for SQ2, SQ3, etc.")
                     return True
-                elif len(unique_sqs) < 3:  # Most decompositions have 3+ sub-questions
+                elif (
+                    len(unique_sqs) <= 5
+                ):  # Continue until we see most sub-questions (6+ for completion)
                     logger.info(
                         f"Only {len(unique_sqs)} sub-questions processed, likely more to go"
                     )
@@ -797,8 +802,11 @@ class FlowManager:
                 )
                 return True
 
-            logger.info("No clear iteration indicators found, defaulting to completion")
-            return False
+            # More conservative default - continue unless we have strong completion signals
+            logger.info(
+                "No clear completion indicators found, continuing for_each to be safe"
+            )
+            return True
 
         except Exception as e:
             logger.error(f"Error analyzing evidence collection progress: {e}")
