@@ -6,7 +6,10 @@ Handles the orchestration and state management of thinking flows
 import logging
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..models.mcp_models import SessionState
 
 from ..config.exceptions import (
     ConfigurationError,
@@ -507,7 +510,7 @@ class FlowManager:
         }
 
     def get_next_step(
-        self, flow_type: str, current_step: str, step_result: str
+        self, flow_type: str, current_step: str, step_result: str, session_state: Optional["SessionState"] = None
     ) -> Optional[Dict[str, Any]]:
         """Get next step information for a flow type with for_each support"""
         if flow_type not in self.flow_definitions:
@@ -544,7 +547,7 @@ class FlowManager:
 
             # Check if we need to continue iterating
             should_continue = self._should_continue_for_each_iteration(
-                current_step_def, step_result, current_step
+                current_step_def, step_result, current_step, session_state
             )
 
             if should_continue:
@@ -569,7 +572,7 @@ class FlowManager:
         return None
 
     def _should_continue_for_each_iteration(
-        self, current_step_def: Dict[str, Any], step_result: str, current_step: str
+        self, current_step_def: Dict[str, Any], step_result: str, current_step: str, session_state: Optional["SessionState"] = None
     ) -> bool:
         """
         Determine if a for_each step should continue iterating
@@ -578,6 +581,7 @@ class FlowManager:
             current_step_def: Step definition with for_each configuration
             step_result: Result from the current step execution
             current_step: Current step name
+            session_state: Session state with structured iteration tracking
 
         Returns:
             True if should continue iterating, False if should advance to next step
@@ -590,8 +594,15 @@ class FlowManager:
                 return False
 
             source_step, property_name = for_each_ref.split(".", 1)
-
-            # For collect_evidence step, we need to check if we've processed all sub-questions
+            
+            # PRIORITY 1: Use structured session state if available
+            if session_state:
+                return self._check_for_each_with_session_state(
+                    current_step, source_step, property_name, session_state
+                )
+            
+            # FALLBACK: Use old text-based detection as backup
+            logger.warning("No session state available, falling back to text-based detection")
             if current_step == "collect_evidence" and source_step == "decompose":
                 return self._check_evidence_collection_progress(
                     step_result, property_name
@@ -605,6 +616,77 @@ class FlowManager:
 
         except Exception as e:
             logger.error(f"Error checking for_each continuation: {e}")
+            return False
+
+    def _check_for_each_with_session_state(
+        self, current_step: str, source_step: str, property_name: str, session_state: "SessionState"
+    ) -> bool:
+        """
+        Check for_each continuation using structured session state
+        
+        Args:
+            current_step: Current step name (e.g., "collect_evidence")
+            source_step: Source step name (e.g., "decompose")
+            property_name: Property name (e.g., "sub_questions")
+            session_state: Session state with iteration tracking
+            
+        Returns:
+            True if more iterations needed, False if all done
+        """
+        try:
+            # Get current and total iterations for this step
+            current_iterations = session_state.iteration_count.get(current_step, 0)
+            total_iterations = session_state.total_iterations.get(current_step, 0)
+            
+            logger.info(f"Checking {current_step}: {current_iterations}/{total_iterations} iterations")
+            
+            # If we have explicit iteration tracking, use it
+            if total_iterations > 0:
+                should_continue = current_iterations < total_iterations
+                logger.info(f"Based on iteration tracking: continue={should_continue}")
+                return should_continue
+            
+            # Otherwise, try to determine from decomposition result
+            if source_step == "decompose" and property_name == "sub_questions":
+                return self._check_decomposition_based_progress(session_state, current_step)
+                
+            logger.warning(f"No tracking data available for {current_step}, defaulting to False")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error in structured for_each check: {e}")
+            # Fall back to safe default
+            return False
+
+    def _check_decomposition_based_progress(self, session_state: "SessionState", current_step: str) -> bool:
+        """
+        Check progress based on decomposition result stored in session
+        """
+        try:
+            if not session_state.decomposition_result:
+                logger.warning("No decomposition result found in session state")
+                return False
+                
+            # Extract sub-questions from decomposition result
+            sub_questions = session_state.decomposition_result.get("sub_questions", [])
+            if not sub_questions:
+                logger.warning("No sub_questions found in decomposition result")
+                return False
+                
+            total_expected = len(sub_questions)
+            current_processed = session_state.iteration_count.get(current_step, 0)
+            
+            logger.info(f"Decomposition-based check: {current_processed}/{total_expected} sub-questions processed")
+            
+            # Update total_iterations if not set
+            if session_state.total_iterations.get(current_step, 0) == 0:
+                session_state.total_iterations[current_step] = total_expected
+                logger.info(f"Set total_iterations for {current_step}: {total_expected}")
+            
+            return current_processed < total_expected
+            
+        except Exception as e:
+            logger.error(f"Error checking decomposition-based progress: {e}")
             return False
 
     def _check_evidence_collection_progress(
@@ -641,7 +723,7 @@ class FlowManager:
                         and "evidence_synthesis" in result_data
                     ):
                         sub_question = result_data.get("sub_question", "")
-                        evidence_synthesis = result_data.get("evidence_synthesis", {})
+                        # evidence_synthesis = result_data.get("evidence_synthesis", {})
 
                         # Check if this contains completion indicators
                         completion_phrases = [
@@ -686,34 +768,64 @@ class FlowManager:
             except (json.JSONDecodeError, ValueError):
                 logger.debug("Step result is not valid JSON, checking text patterns")
 
-            # SECOND PRIORITY: Check for completion indicators in text
-            completion_indicators = [
-                "所有子问题已处理完成",
-                "全部子问题分析完毕",
-                "完成了所有子问题",
-                "证据收集阶段已完成",
-                "证据收集已完成",
-                "evidence collection complete",
-                "evidence collection phase complete",
-                "comprehensive analysis of all",
-                "all sub-questions processed",
-                "final sub-question analysis",
+            # SECOND PRIORITY: Smart counting instead of trusting LLM claims
+            # Count actual sub-questions mentioned in the step result
+            numbered_questions = re.findall(r'(\d+)\.\s+[^0-9]', step_result)
+            sq_matches = re.findall(r"SQ(\d+)", step_result)
+            
+            # Get actual count of distinct sub-questions processed
+            if numbered_questions:
+                question_numbers = [int(n) for n in numbered_questions]
+                actual_count = len(set(question_numbers))
+                max_number = max(question_numbers) if question_numbers else 0
+                logger.info(f"Found {actual_count} distinct numbered questions (max: {max_number})")
+            elif sq_matches:
+                unique_sqs = set(sq_matches)
+                actual_count = len(unique_sqs)
+                max_number = max(int(n) for n in unique_sqs) if unique_sqs else 0
+                logger.info(f"Found {actual_count} distinct SQ questions (max: SQ{max_number})")
+            else:
+                actual_count = 0
+                max_number = 0
+                logger.info("No clear question numbering found")
+
+            # MORE CONSERVATIVE: Only trust completion claims if we have evidence of 6+ or 7+ questions
+            very_strong_completion_indicators = [
                 "第七个子问题",
+                "第7个子问题", 
+                "SQ7",
+                "7个子问题",
+                "seven sub-questions",
+            ]
+            
+            # Only stop if we see strong evidence of comprehensive processing
+            has_strong_completion = any(indicator in step_result for indicator in very_strong_completion_indicators)
+            has_many_questions = max_number >= 6 or actual_count >= 6
+            
+            if has_strong_completion and has_many_questions:
+                logger.info(f"Found strong completion evidence with {actual_count} questions (max: {max_number})")
+                return False
+            elif max_number >= 7 or actual_count >= 7:
+                logger.info("Found evidence of 7+ questions processed, likely complete")
+                return False
+
+            # FALLBACK: Check for very specific completion indicators (not general claims)
+            specific_completion_indicators = [
                 "现在需要进入综合分析阶段",
-                "现在需要进入下一个思考阶段",
+                "现在需要进入下一个思考阶段", 
+                "evidence collection phase complete",
                 "需要进入.*阶段",  # Regex pattern
-                "所有.*子问题已处理完成",  # Regex-style pattern
             ]
 
-            for indicator in completion_indicators:
+            for indicator in specific_completion_indicators:
                 # Handle regex patterns
                 if ".*" in indicator:
                     if re.search(indicator, step_result):
-                        logger.info(f"Found completion indicator (regex): {indicator}")
+                        logger.info(f"Found specific completion indicator (regex): {indicator}")
                         return False
                 else:
                     if indicator in step_result:
-                        logger.info(f"Found completion indicator: {indicator}")
+                        logger.info(f"Found specific completion indicator: {indicator}")
                         return False
 
             # HIGH PRIORITY: Check for summary/conclusion language (suggests completion)
@@ -939,7 +1051,7 @@ class FlowManager:
             )
             return []
 
-        from .flow_state_machine import FlowEvent
+        # from .flow_state_machine import FlowEvent
 
         transitions = self.state_machine.get_valid_transitions(flow)
         return [event.value for event in transitions.keys()]

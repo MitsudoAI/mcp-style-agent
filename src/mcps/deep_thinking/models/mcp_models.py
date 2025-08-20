@@ -149,6 +149,10 @@ class SessionState(BaseModel):
     total_iterations: Dict[str, int] = Field(
         default_factory=dict, description="Total iterations expected per step"
     )
+    # Store decomposition results for accurate for_each processing
+    decomposition_result: Optional[Dict[str, Any]] = Field(
+        default=None, description="Results from problem decomposition step"
+    )
     created_at: datetime = Field(
         default_factory=datetime.now, description="Session creation time"
     )

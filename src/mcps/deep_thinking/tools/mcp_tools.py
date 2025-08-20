@@ -554,9 +554,9 @@ class MCPTools:
                 "instructions": "根据质量反馈改进当前步骤的结果",
             }
 
-        # Use flow manager for standard next step
+        # Use flow manager for standard next step (with session state for accurate for_each tracking)
         next_step_info = self.flow_manager.get_next_step(
-            session.flow_type, session.current_step, step_result
+            session.flow_type, session.current_step, step_result, session
         )
 
         # Enhance with adaptive logic
