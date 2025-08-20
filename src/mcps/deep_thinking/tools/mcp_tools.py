@@ -216,7 +216,9 @@ class MCPTools:
             )
 
             # Build comprehensive context for the next step
-            step_context = self._build_step_context(session, next_step_info)
+            step_context = self._build_step_context(
+                session, next_step_info, original_step_number
+            )
 
             return MCPToolOutput(
                 tool_name=MCPToolName.NEXT_STEP,
@@ -631,7 +633,10 @@ class MCPTools:
             return self.template_manager.get_template(template_name, template_params)
 
     def _build_step_context(
-        self, session: SessionState, next_step_info: Dict[str, Any]
+        self,
+        session: SessionState,
+        next_step_info: Dict[str, Any],
+        original_step_number: int,
     ) -> Dict[str, Any]:
         """Build comprehensive context for the next step"""
         return {
@@ -639,7 +644,7 @@ class MCPTools:
             "session_id": session.session_id,
             "topic": session.topic,
             "current_step": next_step_info["step_name"],
-            "step_number": session.step_number
+            "step_number": original_step_number
             + (0 if next_step_info.get("for_each_continuation") else 1),
             "flow_type": session.flow_type,
             "completed_steps": list(session.step_results.keys()),
