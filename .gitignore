@@ -72,3 +72,9 @@ secrets/
 
 # Draft documents (local only)
 docs/drafts/
+
+# Test results and temporary files
+*_test_results.json
+*_results/
+*_test_*.json
+test_*.json
