@@ -69,3 +69,6 @@ templates/versions/
 *.key
 *.pem
 secrets/
+
+# Draft documents (local only)
+docs/drafts/
