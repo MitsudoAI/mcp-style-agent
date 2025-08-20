@@ -7,6 +7,7 @@ These tools follow the zero-cost principle:
 - No LLM API calls from the server side
 """
 
+import logging
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -30,6 +31,8 @@ from ..sessions.session_manager import SessionManager
 from ..templates.template_manager import TemplateManager
 from .mcp_error_handler import MCPErrorHandler
 
+logger = logging.getLogger(__name__)
+
 
 class MCPTools:
     """
@@ -50,6 +53,8 @@ class MCPTools:
         self.template_manager = template_manager
         self.flow_manager = flow_manager
         self.error_handler = MCPErrorHandler(session_manager, template_manager)
+        # Track active sessions to prevent state inconsistencies  
+        self._active_sessions = {}
 
     def start_thinking(self, input_data: StartThinkingInput) -> MCPToolOutput:
         """
@@ -155,6 +160,7 @@ class MCPTools:
                 quality_score = input_data.quality_feedback["quality_score"]
 
             # Save previous step result with enhanced context
+            # IMPORTANT: Don't auto-increment for_each here, let the flow manager decide
             self.session_manager.add_step_result(
                 input_data.session_id,
                 session.current_step,
@@ -164,14 +170,35 @@ class MCPTools:
                     "step_completion_time": datetime.now().isoformat(),
                     "quality_feedback": input_data.quality_feedback,
                     "step_context": session.context,
+                    "for_each_continuation": False,  # Don't auto-increment
                 },
                 quality_score=quality_score,
             )
 
-            # Determine next step based on flow and current state
+            # CRITICAL: Determine next step and handle for_each iteration properly
             next_step_info = self._determine_next_step_with_context(
                 session, input_data.step_result, input_data.quality_feedback
             )
+            
+            # IMPORTANT: If we're continuing for_each, increment the iteration EXACTLY ONCE
+            if next_step_info and next_step_info.get("for_each_continuation"):
+                # Only increment if we haven't already processed this sub-question
+                current_iterations = session.iteration_count.get(session.current_step, 0)
+                total_iterations = session.total_iterations.get(session.current_step, 0)
+                
+                logger.info(f"FOR_EACH CONTINUATION: {session.current_step} at {current_iterations}/{total_iterations}")
+                
+                # Increment iteration counter for the NEXT sub-question
+                if current_iterations < total_iterations:
+                    session.iteration_count[session.current_step] = current_iterations + 1
+                    new_count = session.iteration_count[session.current_step]
+                    logger.info(f"INCREMENTED {session.current_step}: {current_iterations} -> {new_count}/{total_iterations}")
+                    
+                    # Update session state immediately in both caches
+                    self._active_sessions[session.session_id] = session
+                    self.session_manager._active_sessions[session.session_id] = session
+                else:
+                    logger.warning(f"Cannot increment {session.current_step} beyond {total_iterations}")
 
             if not next_step_info:
                 # Flow completed
@@ -197,6 +224,7 @@ class MCPTools:
                 )
             else:
                 # For for_each continuation, add step result without advancing step_number
+                # IMPORTANT: Mark that iteration was already incremented above
                 self.session_manager.add_step_result(
                     input_data.session_id,
                     session.current_step,
@@ -204,9 +232,11 @@ class MCPTools:
                     result_type="output",
                     metadata={
                         "for_each_continuation": True,
+                        "should_increment_iteration": False,  # Already incremented above
                         "step_completion_time": datetime.now().isoformat(),
                         "quality_feedback": input_data.quality_feedback,
                         "step_context": session.context,
+                        "iteration_already_incremented": True,
                     },
                     quality_score=quality_score,
                 )

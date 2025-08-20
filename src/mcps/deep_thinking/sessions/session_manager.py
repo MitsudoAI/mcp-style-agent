@@ -174,9 +174,8 @@ class SessionManager:
                 # Handle special cases for structured for_each tracking
                 self._handle_special_step_results(session, step_name, step_result)
                 
-                # If this is a for_each step (like collect_evidence), increment iteration
-                if self._is_for_each_step(step_name, session):
-                    self._increment_for_each_iteration(session, step_name)
+                # NOTE: Do NOT increment for_each iteration here to avoid double counting
+                # The increment should only happen when explicitly processing a for_each step
 
             if quality_score is not None:
                 session.quality_scores[step_name] = quality_score
@@ -238,10 +237,11 @@ class SessionManager:
             True if successful
         """
         try:
-            # Handle for_each iteration tracking
+            # Handle for_each iteration tracking - only increment when explicitly marked
             session = self.get_session(session_id)
-            if metadata and metadata.get("for_each_continuation"):
+            if metadata and metadata.get("for_each_continuation") and metadata.get("should_increment_iteration", False):
                 self._increment_for_each_iteration(session, step_name)
+                logger.info(f"Incremented for_each iteration for {step_name} due to explicit flag")
             
             # Get the step ID, create step if it doesn't exist
             steps = self.db.get_session_steps(session_id)
@@ -1728,17 +1728,39 @@ class SessionManager:
     def _increment_for_each_iteration(self, session: "SessionState", step_name: str) -> None:
         """
         Increment the for_each iteration count for a step
+        CRITICAL: This should only be called when actually processing a new sub-question
         """
         try:
             current_count = session.iteration_count.get(step_name, 0)
+            total = session.total_iterations.get(step_name, 0)
+            
+            # Safety check: don't increment beyond total
+            if current_count >= total:
+                logger.warning(f"Attempted to increment {step_name} beyond total iterations: {current_count}/{total}")
+                return
+                
             new_count = current_count + 1
             session.iteration_count[step_name] = new_count
             
-            total = session.total_iterations.get(step_name, 0)
-            logger.info(f"Incremented {step_name} iteration: {new_count}/{total}")
+            logger.info(f"INCREMENTED {step_name} iteration: {current_count} -> {new_count}/{total}")
             
-            # Update the session in cache
+            # Update the session in cache and database immediately
             self._active_sessions[session.session_id] = session
+            
+            # Also update database to prevent state loss
+            if self.db:
+                try:
+                    self.db.update_session(
+                        session.session_id,
+                        context={
+                            **session.context,
+                            "iteration_count": session.iteration_count,
+                            "total_iterations": session.total_iterations,
+                            "last_increment_timestamp": datetime.now().isoformat(),
+                        }
+                    )
+                except Exception as db_error:
+                    logger.error(f"Failed to persist iteration state to database: {db_error}")
             
         except Exception as e:
             logger.error(f"Error incrementing for_each iteration for {step_name}: {e}")

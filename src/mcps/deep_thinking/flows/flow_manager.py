@@ -595,18 +595,22 @@ class FlowManager:
 
             source_step, property_name = for_each_ref.split(".", 1)
             
-            # PRIORITY 1: Use structured session state if available
+            # ABSOLUTE PRIORITY: Use structured session state if available
             if session_state:
-                return self._check_for_each_with_session_state(
+                result = self._check_for_each_with_session_state(
                     current_step, source_step, property_name, session_state
                 )
+                logger.info(f"STRUCTURED STATE DECISION: {current_step} continue={result}")
+                return result
             
-            # FALLBACK: Use old text-based detection as backup
+            # FALLBACK: Use old text-based detection ONLY if no session state
             logger.warning("No session state available, falling back to text-based detection")
             if current_step == "collect_evidence" and source_step == "decompose":
-                return self._check_evidence_collection_progress(
+                result = self._check_evidence_collection_progress(
                     step_result, property_name
                 )
+                logger.warning(f"TEXT-BASED FALLBACK DECISION: continue={result}")
+                return result
 
             # For other for_each steps, implement similar logic
             logger.info(
@@ -623,6 +627,7 @@ class FlowManager:
     ) -> bool:
         """
         Check for_each continuation using structured session state
+        CRITICAL: This method has ABSOLUTE PRIORITY over text-based detection
         
         Args:
             current_step: Current step name (e.g., "collect_evidence")
@@ -638,29 +643,38 @@ class FlowManager:
             current_iterations = session_state.iteration_count.get(current_step, 0)
             total_iterations = session_state.total_iterations.get(current_step, 0)
             
-            logger.info(f"Checking {current_step}: {current_iterations}/{total_iterations} iterations")
+            logger.info(f"🔍 STRUCTURED CHECK {current_step}: {current_iterations}/{total_iterations} iterations")
             
-            # If we have explicit iteration tracking, use it
-            if total_iterations > 0:
-                should_continue = current_iterations < total_iterations
-                logger.info(f"Based on iteration tracking: continue={should_continue}")
-                return should_continue
+            # CRITICAL: Handle edge cases that cause infinite loops
+            if total_iterations == 0:
+                logger.warning(f"No total_iterations set for {current_step}, attempting to determine from decomposition")
+                if source_step == "decompose" and property_name == "sub_questions":
+                    return self._check_decomposition_based_progress(session_state, current_step)
+                else:
+                    logger.warning("Cannot determine iteration count, defaulting to False (stop)")
+                    return False
             
-            # Otherwise, try to determine from decomposition result
-            if source_step == "decompose" and property_name == "sub_questions":
-                return self._check_decomposition_based_progress(session_state, current_step)
+            # CRITICAL: Ignore LLM text claims - only use structured counts
+            if current_iterations >= total_iterations:
+                logger.info(f"🛑 STRUCTURED STATE SAYS STOP: {current_iterations}/{total_iterations} iterations completed")
+                return False
                 
-            logger.warning(f"No tracking data available for {current_step}, defaulting to False")
-            return False
+            # Check if we should continue (need more iterations)
+            should_continue = current_iterations < total_iterations
+            logger.info(f"🔄 STRUCTURED STATE SAYS CONTINUE: {should_continue} ({current_iterations} < {total_iterations})")
+            logger.info("🚫 IGNORING any text-based completion claims from LLM output")
+            
+            return should_continue
             
         except Exception as e:
             logger.error(f"Error in structured for_each check: {e}")
-            # Fall back to safe default
+            # Fall back to safe default (stop to prevent infinite loop)
             return False
 
     def _check_decomposition_based_progress(self, session_state: "SessionState", current_step: str) -> bool:
         """
         Check progress based on decomposition result stored in session
+        CRITICAL: This sets up proper iteration tracking when missing
         """
         try:
             if not session_state.decomposition_result:
@@ -676,14 +690,21 @@ class FlowManager:
             total_expected = len(sub_questions)
             current_processed = session_state.iteration_count.get(current_step, 0)
             
-            logger.info(f"Decomposition-based check: {current_processed}/{total_expected} sub-questions processed")
+            logger.info(f"DECOMPOSITION-BASED CHECK: {current_processed}/{total_expected} sub-questions processed")
             
-            # Update total_iterations if not set
+            # CRITICAL: Set up proper iteration tracking if missing
             if session_state.total_iterations.get(current_step, 0) == 0:
                 session_state.total_iterations[current_step] = total_expected
-                logger.info(f"Set total_iterations for {current_step}: {total_expected}")
+                logger.info(f"INITIALIZED total_iterations for {current_step}: {total_expected}")
             
-            return current_processed < total_expected
+            # CRITICAL: Ensure we don't exceed the total
+            if current_processed >= total_expected:
+                logger.info(f"All sub-questions processed: {current_processed}/{total_expected} - STOPPING")
+                return False
+            
+            should_continue = current_processed < total_expected
+            logger.info(f"Decomposition check result: continue={should_continue}")
+            return should_continue
             
         except Exception as e:
             logger.error(f"Error checking decomposition-based progress: {e}")
@@ -694,6 +715,9 @@ class FlowManager:
     ) -> bool:
         """
         Check if evidence collection should continue for more sub-questions
+        
+        WARNING: This is FALLBACK logic only when structured state is unavailable.
+        Structured session state tracking takes ABSOLUTE PRIORITY.
 
         Uses intelligent analysis of decomposition results and evidence content
         to dynamically determine completion, avoiding hard-coded thresholds.
