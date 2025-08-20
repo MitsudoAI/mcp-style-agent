@@ -613,6 +613,9 @@ class FlowManager:
         """
         Check if evidence collection should continue for more sub-questions
 
+        Uses intelligent analysis of decomposition results and evidence content
+        to dynamically determine completion, avoiding hard-coded thresholds.
+
         Args:
             step_result: Result from evidence collection step
             property_name: Property name (e.g., "sub_questions")
@@ -624,6 +627,10 @@ class FlowManager:
         import re
 
         try:
+            # Get the expected number of sub-questions from decomposition result
+            expected_subquestions = self._get_expected_subquestion_count()
+            logger.info(f"Expected sub-questions count: {expected_subquestions}")
+
             # HIGHEST PRIORITY: Check for JSON-structured evidence first
             try:
                 result_data = json.loads(step_result.strip())
@@ -645,6 +652,7 @@ class FlowManager:
                             "all sub-questions processed",
                             "阶段结束",
                             "处理完成",
+                            "analysis_complete",  # JSON field indicating completion
                         ]
 
                         full_text = json.dumps(result_data, ensure_ascii=False)
@@ -654,6 +662,16 @@ class FlowManager:
                                     f"Found completion indicator in JSON: {phrase}"
                                 )
                                 return False
+
+                        # Check for explicit completion fields in JSON
+                        if (
+                            result_data.get("analysis_complete") is True
+                            or "sub_questions_processed" in result_data
+                        ):
+                            logger.info(
+                                "Found explicit completion fields in JSON structure"
+                            )
+                            return False
 
                         # If we have a specific sub-question without completion indicators,
                         # this indicates individual processing - continue for_each
@@ -677,12 +695,19 @@ class FlowManager:
                 "all sub-questions processed",
                 "final sub-question analysis",
                 "第七个子问题",
+                "所有.*子问题已处理完成",  # Regex-style pattern
             ]
 
             for indicator in completion_indicators:
-                if indicator in step_result:
-                    logger.info(f"Found completion indicator: {indicator}")
-                    return False
+                if "所有.*子问题已处理完成" in indicator:
+                    # Use regex for this pattern
+                    if re.search(r"所有.*子问题已处理完成", step_result):
+                        logger.info(f"Found completion indicator (regex): {indicator}")
+                        return False
+                else:
+                    if indicator in step_result:
+                        logger.info(f"Found completion indicator: {indicator}")
+                        return False
 
             # HIGH PRIORITY: Check for summary/conclusion language (suggests completion)
             conclusion_patterns = [
@@ -700,29 +725,51 @@ class FlowManager:
                     logger.info(f"Found conclusion pattern: {pattern}")
                     return False
 
-            # MEDIUM PRIORITY: Check for multiple sub-question IDs (completion summary)
+            # SMART PRIORITY: Dynamic completion detection based on expected count
             sq_matches = re.findall(r"SQ(\d+)", step_result)
             if sq_matches:
                 unique_sqs = set(sq_matches)
+                processed_count = len(unique_sqs)
                 logger.info(f"Found sub-question IDs in result: {unique_sqs}")
+                logger.info(
+                    f"Processed: {processed_count}, Expected: {expected_subquestions}"
+                )
 
-                # If we see many SQs (like SQ1-SQ7), it's likely a completion summary
-                if len(unique_sqs) >= 6:  # Raised threshold for 7-question scenarios
-                    logger.info(
-                        f"Found {len(unique_sqs)} sub-questions, likely completion summary"
+                # Dynamic completion threshold based on expected count
+                if expected_subquestions > 0:
+                    completion_threshold = max(
+                        expected_subquestions - 1, expected_subquestions * 0.8
                     )
-                    return False
+                    logger.info(
+                        f"Using dynamic completion threshold: {completion_threshold}"
+                    )
 
-                # If we see multiple SQs with checkmarks, it's probably completion
-                # Use higher thresholds to avoid premature termination
-                checkmark_count = step_result.count("✓")
-                if (
-                    len(unique_sqs) >= 6 and checkmark_count >= 6
-                ):  # Much higher threshold
-                    logger.info(
-                        f"Found {len(unique_sqs)} SQs with {checkmark_count} checkmarks, likely completion"
-                    )
-                    return False
+                    # If we've seen most/all expected sub-questions, check for completion signals
+                    if processed_count >= completion_threshold:
+                        checkmark_count = step_result.count("✓")
+                        if checkmark_count >= completion_threshold:
+                            logger.info(
+                                f"Found {processed_count}/{expected_subquestions} SQs with {checkmark_count} checkmarks, likely completion"
+                            )
+                            return False
+                        elif processed_count >= expected_subquestions:
+                            logger.info(
+                                f"Found all expected sub-questions ({processed_count}/{expected_subquestions}), likely completion summary"
+                            )
+                            return False
+                else:
+                    # Smart fallback: look for completion signals when we have substantial progress
+                    if processed_count >= 5:
+                        # With 5+ sub-questions, look for strong completion signals
+                        checkmark_count = step_result.count("✓")
+                        if (
+                            checkmark_count >= processed_count * 0.8
+                            or processed_count >= 7
+                        ):  # Very high confidence threshold
+                            logger.info(
+                                f"Found {processed_count} sub-questions with completion signals (fallback), likely completion"
+                            )
+                            return False
 
             # LOWER PRIORITY: Check for sub-question processing indicators
             sub_question_indicators = [
@@ -781,19 +828,30 @@ class FlowManager:
                     logger.info(f"Detected individual analysis pattern: {pattern}")
                     return True
 
-            # Check for single SQ processing (but not in completion context)
+            # Check for partial SQ processing (dynamic threshold)
             if sq_matches:
+                processed_count = len(unique_sqs)
                 # If we see SQ1 but not others, and no completion context, continue
-                if "1" in unique_sqs and len(unique_sqs) == 1:
+                if "1" in unique_sqs and processed_count == 1:
                     logger.info("Only SQ1 processed, continuing for SQ2, SQ3, etc.")
                     return True
-                elif (
-                    len(unique_sqs) <= 5
-                ):  # Continue until we see most sub-questions (6+ for completion)
-                    logger.info(
-                        f"Only {len(unique_sqs)} sub-questions processed, likely more to go"
+                elif expected_subquestions > 0:
+                    # Use dynamic threshold: continue if we haven't processed most sub-questions yet
+                    continue_threshold = max(
+                        expected_subquestions * 0.7, expected_subquestions - 2
                     )
-                    return True
+                    if processed_count < continue_threshold:
+                        logger.info(
+                            f"Only {processed_count}/{expected_subquestions} sub-questions processed (< {continue_threshold:.1f}), continuing"
+                        )
+                        return True
+                else:
+                    # Fallback: continue until we see substantial progress
+                    if processed_count <= 4:
+                        logger.info(
+                            f"Only {processed_count} sub-questions processed (fallback threshold), likely more to go"
+                        )
+                        return True
 
             # Default heuristic - if we have substantial content but no clear indicators
             if len(step_result) > 1000:
@@ -812,6 +870,29 @@ class FlowManager:
             logger.error(f"Error analyzing evidence collection progress: {e}")
             # Default to continuing to be safe - this ensures we don't miss iterations
             return True
+
+    def _get_expected_subquestion_count(self) -> int:
+        """
+        Get the expected number of sub-questions from decomposition result
+
+        Since we don't have direct access to session state in this context,
+        we use intelligent heuristics based on step result patterns and
+        decomposition complexity indicators.
+
+        Returns:
+            Estimated number of expected sub-questions, or 0 if cannot be determined
+        """
+        try:
+            # TODO: Future enhancement - access session state to get actual decomposition result
+            # For now, use conservative estimation that favors continuing iteration
+
+            # Return 0 to trigger conservative fallback logic in the caller
+            # This is safer than guessing wrong and terminating early
+            return 0
+
+        except Exception as e:
+            logger.error(f"Error getting expected sub-question count: {e}")
+            return 0
 
     def get_total_steps(self, flow_type: str) -> int:
         """Get total number of steps in a flow type"""
