@@ -8,7 +8,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..config.exceptions import ConfigurationError, FlowExecutionError, InvalidTransitionError
+from ..config.exceptions import (
+    ConfigurationError,
+    FlowExecutionError,
+    InvalidTransitionError,
+)
 from ..data.database import ThinkingDatabase
 from ..models.thinking_models import FlowStep, FlowStepStatus
 
@@ -24,8 +28,6 @@ class FlowStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
-
-
 
 
 class ThinkingFlow:
@@ -176,11 +178,12 @@ class FlowManager:
         self.flow_definitions: Dict[str, Dict[str, Any]] = {}
         self.db = db
         self._load_default_flows()
-        
+
         # Initialize state machine if database is provided
         from .flow_state_machine import FlowStateMachine
+
         self.state_machine = FlowStateMachine(db)
-        
+
         logger.info("FlowManager initialized")
 
     def _load_default_flows(self):
@@ -263,12 +266,19 @@ class FlowManager:
 
         # Add steps
         for step_def in flow_def["steps"]:
+            # Prepare config with template name
+            config = step_def.get("config", {}).copy()
+            if "template_name" in step_def:
+                config["template_name"] = step_def["template_name"]
+
             step = FlowStep(
                 step_id=step_def["step_id"],
-                agent_type=step_def.get("step_type", "unknown"),  # Map step_type to agent_type
+                agent_type=step_def.get(
+                    "step_type", "unknown"
+                ),  # Map step_type to agent_type
                 step_name=step_def["step_name"],
                 description=step_def.get("description", ""),
-                config=step_def.get("config", {}),
+                config=config,
                 for_each=step_def.get("for_each"),  # Add for_each support
                 dependencies=step_def.get("dependencies", []),
             )
@@ -292,6 +302,7 @@ class FlowManager:
 
         # Use state machine to transition flow to running state
         from .flow_state_machine import FlowEvent
+
         try:
             new_state, success = self.state_machine.transition(flow, FlowEvent.START)
             if not success:
@@ -325,24 +336,29 @@ class FlowManager:
 
         # Use state machine to handle step completion
         from .flow_state_machine import FlowEvent
+
         try:
             metadata = {
                 "step_id": step_id,
                 "result": result,
-                "quality_score": quality_score
+                "quality_score": quality_score,
             }
-            new_state, success = self.state_machine.transition(flow, FlowEvent.COMPLETE_STEP, metadata)
+            new_state, success = self.state_machine.transition(
+                flow, FlowEvent.COMPLETE_STEP, metadata
+            )
             if not success:
                 logger.warning(f"Failed to complete step {step_id} in flow {flow_id}")
                 # Fallback to direct method
                 step = flow.steps[step_id]
                 step.complete(result, quality_score)
         except InvalidTransitionError as e:
-            logger.error(f"Invalid transition when completing step {step_id} in flow {flow_id}: {e}")
+            logger.error(
+                f"Invalid transition when completing step {step_id} in flow {flow_id}: {e}"
+            )
             # Fallback to direct method
             step = flow.steps[step_id]
             step.complete(result, quality_score)
-            
+
             # Check if flow is complete
             if all(
                 step.status in [FlowStepStatus.COMPLETED, FlowStepStatus.SKIPPED]
@@ -352,7 +368,9 @@ class FlowManager:
 
         logger.info(f"Completed step {step_id} in flow {flow_id}")
 
-    def fail_step(self, flow_id: str, step_id: str, error_message: str, critical: bool = False):
+    def fail_step(
+        self, flow_id: str, step_id: str, error_message: str, critical: bool = False
+    ):
         """Mark a step as failed"""
         flow = self.get_flow(flow_id)
         if not flow:
@@ -363,20 +381,27 @@ class FlowManager:
 
         # Use state machine to handle step failure
         from .flow_state_machine import FlowEvent
+
         try:
             metadata = {
                 "step_id": step_id,
                 "error_message": error_message,
-                "critical": critical
+                "critical": critical,
             }
-            new_state, success = self.state_machine.transition(flow, FlowEvent.FAIL_STEP, metadata)
+            new_state, success = self.state_machine.transition(
+                flow, FlowEvent.FAIL_STEP, metadata
+            )
             if not success:
-                logger.warning(f"Failed to mark step {step_id} as failed in flow {flow_id}")
+                logger.warning(
+                    f"Failed to mark step {step_id} as failed in flow {flow_id}"
+                )
                 # Fallback to direct method
                 step = flow.steps[step_id]
                 step.fail(error_message)
         except InvalidTransitionError as e:
-            logger.error(f"Invalid transition when failing step {step_id} in flow {flow_id}: {e}")
+            logger.error(
+                f"Invalid transition when failing step {step_id} in flow {flow_id}: {e}"
+            )
             # Fallback to direct method
             step = flow.steps[step_id]
             step.fail(error_message)
@@ -392,6 +417,7 @@ class FlowManager:
 
         # Use state machine to handle flow pause
         from .flow_state_machine import FlowEvent
+
         try:
             new_state, success = self.state_machine.transition(flow, FlowEvent.PAUSE)
             if not success:
@@ -413,6 +439,7 @@ class FlowManager:
 
         # Use state machine to handle flow resume
         from .flow_state_machine import FlowEvent
+
         try:
             new_state, success = self.state_machine.transition(flow, FlowEvent.RESUME)
             if not success:
@@ -430,7 +457,7 @@ class FlowManager:
         flow = self.get_flow(flow_id)
         if not flow:
             return None
-            
+
         # Use state machine to get detailed flow state summary
         try:
             return self.state_machine.get_flow_state_summary(flow)
@@ -482,7 +509,7 @@ class FlowManager:
     def get_next_step(
         self, flow_type: str, current_step: str, step_result: str
     ) -> Optional[Dict[str, Any]]:
-        """Get next step information for a flow type"""
+        """Get next step information for a flow type with for_each support"""
         if flow_type not in self.flow_definitions:
             return None
 
@@ -491,6 +518,7 @@ class FlowManager:
 
         # Find current step index - handle different step name formats
         current_index = -1
+        current_step_def = None
         for i, step in enumerate(steps):
             step_id = step["step_id"]
             step_name = step["step_name"]
@@ -507,11 +535,31 @@ class FlowManager:
                 and step_id == "evaluate"
             ):
                 current_index = i
+                current_step_def = step
                 break
+
+        # Check if current step has for_each and needs to continue iterating
+        if current_step_def and current_step_def.get("for_each"):
+            logger.info(f"Checking for_each continuation for step {current_step}")
+
+            # Check if we need to continue iterating
+            should_continue = self._should_continue_for_each_iteration(
+                current_step_def, step_result, current_step
+            )
+
+            if should_continue:
+                logger.info(f"Continuing for_each iteration for step {current_step}")
+                return {
+                    "step_name": current_step_def["step_id"],
+                    "template_name": current_step_def["template_name"],
+                    "instructions": f"Continue {current_step_def['step_name']} step for next sub-question",
+                    "for_each_continuation": True,
+                }
 
         # Return next step if available
         if current_index >= 0 and current_index + 1 < len(steps):
             next_step = steps[current_index + 1]
+            logger.info(f"Advancing from {current_step} to {next_step['step_id']}")
             return {
                 "step_name": next_step["step_id"],
                 "template_name": next_step["template_name"],
@@ -520,73 +568,313 @@ class FlowManager:
 
         return None
 
+    def _should_continue_for_each_iteration(
+        self, current_step_def: Dict[str, Any], step_result: str, current_step: str
+    ) -> bool:
+        """
+        Determine if a for_each step should continue iterating
+
+        Args:
+            current_step_def: Step definition with for_each configuration
+            step_result: Result from the current step execution
+            current_step: Current step name
+
+        Returns:
+            True if should continue iterating, False if should advance to next step
+        """
+        try:
+            # Parse for_each reference (e.g., "decompose.sub_questions")
+            for_each_ref = current_step_def.get("for_each", "")
+            if not for_each_ref or "." not in for_each_ref:
+                logger.warning(f"Invalid for_each reference: {for_each_ref}")
+                return False
+
+            source_step, property_name = for_each_ref.split(".", 1)
+
+            # For collect_evidence step, we need to check if we've processed all sub-questions
+            if current_step == "collect_evidence" and source_step == "decompose":
+                return self._check_evidence_collection_progress(
+                    step_result, property_name
+                )
+
+            # For other for_each steps, implement similar logic
+            logger.info(
+                f"No specific for_each continuation logic for {current_step}, defaulting to False"
+            )
+            return False
+
+        except Exception as e:
+            logger.error(f"Error checking for_each continuation: {e}")
+            return False
+
+    def _check_evidence_collection_progress(
+        self, step_result: str, property_name: str
+    ) -> bool:
+        """
+        Check if evidence collection should continue for more sub-questions
+
+        Args:
+            step_result: Result from evidence collection step
+            property_name: Property name (e.g., "sub_questions")
+
+        Returns:
+            True if more sub-questions need processing, False if all are done
+        """
+        import json
+        import re
+
+        try:
+            # HIGHEST PRIORITY: Check for JSON-structured evidence first
+            try:
+                result_data = json.loads(step_result.strip())
+                if isinstance(result_data, dict):
+                    # Check if this is individual sub-question processing format
+                    if (
+                        "sub_question" in result_data
+                        and "evidence_synthesis" in result_data
+                    ):
+                        sub_question = result_data.get("sub_question", "")
+                        evidence_synthesis = result_data.get("evidence_synthesis", {})
+
+                        # Check if this contains completion indicators
+                        completion_phrases = [
+                            "所有子问题已处理完成",
+                            "全部子问题分析完毕",
+                            "完成了所有子问题",
+                            "evidence collection complete",
+                            "all sub-questions processed",
+                            "阶段结束",
+                            "处理完成",
+                        ]
+
+                        full_text = json.dumps(result_data, ensure_ascii=False)
+                        for phrase in completion_phrases:
+                            if phrase in full_text:
+                                logger.info(
+                                    f"Found completion indicator in JSON: {phrase}"
+                                )
+                                return False
+
+                        # If we have a specific sub-question without completion indicators,
+                        # this indicates individual processing - continue for_each
+                        if sub_question and not any(
+                            phrase in full_text for phrase in completion_phrases
+                        ):
+                            logger.info(
+                                f"Found individual sub-question processing in JSON format: {sub_question[:50]}..."
+                            )
+                            return True
+
+            except (json.JSONDecodeError, ValueError):
+                logger.debug("Step result is not valid JSON, checking text patterns")
+
+            # SECOND PRIORITY: Check for completion indicators in text
+            completion_indicators = [
+                "所有子问题已处理完成",
+                "全部子问题分析完毕",
+                "完成了所有子问题",
+                "comprehensive analysis of all",
+                "all sub-questions processed",
+                "final sub-question analysis",
+                "第七个子问题",
+            ]
+
+            for indicator in completion_indicators:
+                if indicator in step_result:
+                    logger.info(f"Found completion indicator: {indicator}")
+                    return False
+
+            # HIGH PRIORITY: Check for summary/conclusion language (suggests completion)
+            conclusion_patterns = [
+                "综合以上分析",
+                "总结",
+                "综合建议",
+                "最终建议",
+                "in conclusion",
+                "to summarize",
+                "overall recommendation",
+            ]
+
+            for pattern in conclusion_patterns:
+                if pattern in step_result:
+                    logger.info(f"Found conclusion pattern: {pattern}")
+                    return False
+
+            # MEDIUM PRIORITY: Check for multiple sub-question IDs (completion summary)
+            sq_matches = re.findall(r"SQ(\d+)", step_result)
+            if sq_matches:
+                unique_sqs = set(sq_matches)
+                logger.info(f"Found sub-question IDs in result: {unique_sqs}")
+
+                # If we see many SQs (like SQ1-SQ7), it's likely a completion summary
+                if len(unique_sqs) >= 5:
+                    logger.info(
+                        f"Found {len(unique_sqs)} sub-questions, likely completion summary"
+                    )
+                    return False
+
+                # If we see multiple SQs with checkmarks, it's probably completion
+                checkmark_count = step_result.count("✓")
+                if len(unique_sqs) >= 3 and checkmark_count >= 3:
+                    logger.info(
+                        f"Found {len(unique_sqs)} SQs with {checkmark_count} checkmarks, likely completion"
+                    )
+                    return False
+
+            # LOWER PRIORITY: Check for sub-question processing indicators
+            sub_question_indicators = [
+                "第一个高优先级子问题",
+                "第二个高优先级子问题",
+                "第三个子问题",
+                "第一个子问题",
+                "第二个子问题",
+                "第1个子问题",
+                "第2个子问题",
+                "继续为",
+                "针对SQ",
+                "为.*子问题",
+                "first sub-question",
+                "second sub-question",
+                "first high-priority",
+            ]
+
+            for indicator in sub_question_indicators:
+                if indicator in step_result:
+                    logger.info(
+                        f"Detected sub-question processing indicator: {indicator}"
+                    )
+                    return True
+
+            # Check for specific individual processing patterns
+            individual_processing_indicators = [
+                "重点关注在无本金约束下",
+                "技术分析和AI工具识别",
+                "最佳入场时机",
+                "市场趋势",
+                "期权组合策略",
+                "风险管理体系",
+            ]
+
+            individual_count = sum(
+                1
+                for indicator in individual_processing_indicators
+                if indicator in step_result
+            )
+            if individual_count >= 2:
+                logger.info("Detected individual sub-question processing patterns")
+                return True
+
+            # Check for individual analysis patterns (suggests focusing on one sub-question)
+            individual_analysis_patterns = [
+                "这为第.*子问题提供了",
+                "针对.*的详细分析",
+                "这为.*提供了.*分析",
+                "detailed analysis for",
+                "provides analysis for",
+            ]
+
+            for pattern in individual_analysis_patterns:
+                if re.search(pattern, step_result):
+                    logger.info(f"Detected individual analysis pattern: {pattern}")
+                    return True
+
+            # Check for single SQ processing (but not in completion context)
+            if sq_matches:
+                # If we see SQ1 but not others, and no completion context, continue
+                if "1" in unique_sqs and len(unique_sqs) == 1:
+                    logger.info("Only SQ1 processed, continuing for SQ2, SQ3, etc.")
+                    return True
+                elif len(unique_sqs) < 3:  # Most decompositions have 3+ sub-questions
+                    logger.info(
+                        f"Only {len(unique_sqs)} sub-questions processed, likely more to go"
+                    )
+                    return True
+
+            # Default heuristic - if we have substantial content but no clear indicators
+            if len(step_result) > 1000:
+                logger.info(
+                    f"Substantial result ({len(step_result)} chars) without completion indicators, continuing for_each"
+                )
+                return True
+
+            logger.info("No clear iteration indicators found, defaulting to completion")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error analyzing evidence collection progress: {e}")
+            # Default to continuing to be safe - this ensures we don't miss iterations
+            return True
+
     def get_total_steps(self, flow_type: str) -> int:
         """Get total number of steps in a flow type"""
         if flow_type not in self.flow_definitions:
             return 0
         return len(self.flow_definitions[flow_type]["steps"])
-        
+
     def reset_flow(self, flow_id: str) -> bool:
         """Reset a flow to its initial state"""
         flow = self.get_flow(flow_id)
         if not flow:
             logger.warning(f"Flow not found when trying to reset: {flow_id}")
             return False
-            
+
         # Use state machine to reset the flow
         try:
             return self.state_machine.reset_flow(flow)
         except Exception as e:
             logger.error(f"Error resetting flow {flow_id}: {e}")
             return False
-            
+
     def get_flow_state_history(self, flow_id: str) -> List[Dict[str, Any]]:
         """Get state transition history for a flow"""
         flow = self.get_flow(flow_id)
         if not flow:
             logger.warning(f"Flow not found when trying to get history: {flow_id}")
             return []
-            
+
         return self.state_machine.get_state_history(flow_id)
-        
+
     def get_valid_transitions(self, flow_id: str) -> List[str]:
         """Get valid transitions for a flow's current state"""
         flow = self.get_flow(flow_id)
         if not flow:
-            logger.warning(f"Flow not found when trying to get valid transitions: {flow_id}")
+            logger.warning(
+                f"Flow not found when trying to get valid transitions: {flow_id}"
+            )
             return []
-            
+
         from .flow_state_machine import FlowEvent
+
         transitions = self.state_machine.get_valid_transitions(flow)
         return [event.value for event in transitions.keys()]
-        
+
     def restore_flow(self, flow_id: str, session_id: str) -> Optional[str]:
         """
         Restore a flow from database
-        
+
         Args:
             flow_id: Flow identifier
             session_id: Session identifier
-            
+
         Returns:
             Flow ID if successful, None otherwise
         """
         if not self.db:
             logger.warning("Cannot restore flow without database")
             return None
-            
+
         try:
             # Restore flow state from database
             flow = self.state_machine.restore_flow_state(flow_id, session_id)
             if not flow:
                 logger.warning(f"Failed to restore flow {flow_id}")
                 return None
-                
+
             # Add to active flows
             self.active_flows[flow_id] = flow
             logger.info(f"Restored flow {flow_id}")
             return flow_id
-            
+
         except Exception as e:
             logger.error(f"Error restoring flow {flow_id}: {e}")
             return None

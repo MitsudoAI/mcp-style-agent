@@ -111,7 +111,10 @@ class MCPTools:
                     tool_name="start_thinking",
                     error=e,
                     session_id=None,
-                    context={"topic": input_data.topic, "complexity": input_data.complexity}
+                    context={
+                        "topic": input_data.topic,
+                        "complexity": input_data.complexity,
+                    },
                 )
             except Exception:
                 # Fallback if error handler fails
@@ -131,14 +134,16 @@ class MCPTools:
             try:
                 session = self.session_manager.get_session(input_data.session_id)
                 if session is None:
-                    raise SessionNotFoundError("Session not found", session_id=input_data.session_id)
+                    raise SessionNotFoundError(
+                        "Session not found", session_id=input_data.session_id
+                    )
             except Exception as e:
                 # Session not found - use error handler for consistent handling
                 return self.error_handler.handle_mcp_error(
                     tool_name="next_step",
                     error=e,
                     session_id=input_data.session_id,
-                    context={"step_result": input_data.step_result}
+                    context={"step_result": input_data.step_result},
                 )
 
             # Extract quality score from step result if provided
@@ -172,13 +177,33 @@ class MCPTools:
                 # Flow completed
                 return self._handle_flow_completion(input_data.session_id)
 
+            # Store original step number for metadata calculation
+            original_step_number = session.step_number
+
             # Update session state with enhanced tracking
-            self.session_manager.update_session_step(
-                input_data.session_id,
-                next_step_info["step_name"],
-                step_result=input_data.step_result,
-                quality_score=quality_score,
-            )
+            # Only update step number if not for_each continuation
+            if not next_step_info.get("for_each_continuation"):
+                self.session_manager.update_session_step(
+                    input_data.session_id,
+                    next_step_info["step_name"],
+                    step_result=input_data.step_result,
+                    quality_score=quality_score,
+                )
+            else:
+                # For for_each continuation, add step result without advancing step_number
+                self.session_manager.add_step_result(
+                    input_data.session_id,
+                    session.current_step,
+                    input_data.step_result,
+                    result_type="output",
+                    metadata={
+                        "for_each_continuation": True,
+                        "step_completion_time": datetime.now().isoformat(),
+                        "quality_feedback": input_data.quality_feedback,
+                        "step_context": session.context,
+                    },
+                    quality_score=quality_score,
+                )
 
             # Build enhanced template parameters with full context
             template_params = self._build_enhanced_template_params(
@@ -202,14 +227,18 @@ class MCPTools:
                 context=step_context,
                 next_action=self._determine_next_action(next_step_info, session),
                 metadata={
-                    "step_number": session.step_number + 1,
-                    "flow_progress": f"{session.step_number + 1}/{self.flow_manager.get_total_steps(session.flow_type)}",
+                    "step_number": original_step_number
+                    + (0 if next_step_info.get("for_each_continuation") else 1),
+                    "flow_progress": f"{original_step_number + (0 if next_step_info.get('for_each_continuation') else 1)}/{self.flow_manager.get_total_steps(session.flow_type)}",
                     "flow_type": session.flow_type,
                     "previous_step": session.current_step,
                     "quality_gate_passed": quality_score is None
                     or quality_score >= 0.7,
                     "template_selected": next_step_info["template_name"],
                     "context_enriched": True,
+                    "for_each_continuation": next_step_info.get(
+                        "for_each_continuation", False
+                    ),
                 },
             )
 
@@ -219,27 +248,29 @@ class MCPTools:
                 error_context = {
                     "step_result": input_data.step_result,
                     "quality_feedback": input_data.quality_feedback,
-                    "session_lookup_failed": True
+                    "session_lookup_failed": True,
                 }
-                
+
                 # Try to get partial session info for better recovery
                 try:
                     session = self.session_manager.get_session(input_data.session_id)
                     if session:
-                        error_context.update({
-                            "current_step": session.current_step,
-                            "flow_type": session.flow_type,
-                            "step_number": session.step_number,
-                            "session_lookup_failed": False
-                        })
+                        error_context.update(
+                            {
+                                "current_step": session.current_step,
+                                "flow_type": session.flow_type,
+                                "step_number": session.step_number,
+                                "session_lookup_failed": False,
+                            }
+                        )
                 except Exception:
                     pass  # Keep original context
-                
+
                 return self.error_handler.handle_mcp_error(
                     tool_name="next_step",
                     error=e,
                     session_id=input_data.session_id,
-                    context=error_context
+                    context=error_context,
                 )
             except Exception:
                 # Fallback if error handler fails
@@ -358,7 +389,7 @@ class MCPTools:
                         "step_name": input_data.step_name,
                         "step_result": input_data.step_result,
                         "analysis_type": input_data.analysis_type,
-                    }
+                    },
                 )
             except Exception:
                 # Fallback if error handler fails
@@ -476,7 +507,7 @@ class MCPTools:
                     tool_name="complete_thinking",
                     error=e,
                     session_id=input_data.session_id,
-                    context={"final_insights": input_data.final_insights}
+                    context={"final_insights": input_data.final_insights},
                 )
             except Exception:
                 # Fallback if error handler fails
@@ -608,7 +639,8 @@ class MCPTools:
             "session_id": session.session_id,
             "topic": session.topic,
             "current_step": next_step_info["step_name"],
-            "step_number": session.step_number + 1,
+            "step_number": session.step_number
+            + (0 if next_step_info.get("for_each_continuation") else 1),
             "flow_type": session.flow_type,
             "completed_steps": list(session.step_results.keys()),
             "quality_scores": session.quality_scores,
@@ -1090,7 +1122,7 @@ class MCPTools:
             step_name=step_name,
             expected_format=validation_result["expected_format"],
         )
-        
+
         return self.error_handler.handle_mcp_error(
             tool_name="format_validator",
             error=error,
@@ -1099,7 +1131,7 @@ class MCPTools:
                 "step_name": step_name,
                 "format_issues": validation_result["issues"],
                 "expected_format": validation_result["expected_format"],
-            }
+            },
         )
 
     def _get_format_example(self, step_name: str) -> str:
@@ -1187,12 +1219,12 @@ class MCPTools:
         error = SessionNotFoundError(
             f"Session {session_id} not found", session_id=session_id
         )
-        
+
         return self.error_handler.handle_mcp_error(
             tool_name="session_manager",
             error=error,
             session_id=session_id,
-            context={"session_id": session_id}
+            context={"session_id": session_id},
         )
 
     def _handle_flow_completion(self, session_id: str) -> MCPToolOutput:
@@ -1220,13 +1252,13 @@ class MCPTools:
         error = MCPToolExecutionError(
             error_message, tool_name=tool_name, session_id=session_id
         )
-        
+
         # Use the error handler to create appropriate recovery response
         return self.error_handler.handle_mcp_error(
             tool_name=tool_name,
             error=error,
             session_id=session_id,
-            context={"error_message": error_message}
+            context={"error_message": error_message},
         )
 
     # Enhanced helper methods for complete_thinking tool
