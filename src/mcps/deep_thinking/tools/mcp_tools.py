@@ -11,6 +11,7 @@ import json
 import logging
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..config.exceptions import (
@@ -2098,7 +2099,6 @@ class MCPTools:
         Returns:
             Path object for export directory
         """
-        from pathlib import Path
         import os
         import tempfile
         
