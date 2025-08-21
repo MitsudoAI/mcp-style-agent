@@ -468,12 +468,45 @@ class MCPTools:
         - Quality metrics calculation and analysis
         - Final report template with detailed insights
         - Session completion with full trace preservation
+        - CRITICAL: Validation to prevent unauthorized completion by HOST
         """
         try:
             # Get session state
             session = self.session_manager.get_session(input_data.session_id)
             if not session:
                 return self._handle_session_not_found(input_data.session_id)
+            
+            # 🚨 CRITICAL: Validate that completion is actually allowed
+            completion_validation = self._validate_completion_eligibility(session)
+            if not completion_validation["allowed"]:
+                logger.warning(f"🚫 BLOCKED UNAUTHORIZED COMPLETION: {completion_validation['reason']}")
+                logger.warning(f"📊 Current state: {completion_validation['current_state']}")
+                
+                # Force HOST to continue the incomplete for_each
+                return MCPToolOutput(
+                    tool_name=MCPToolName.NEXT_STEP,  # Force next_step instead of completion
+                    session_id=input_data.session_id,
+                    step=completion_validation["required_step"],
+                    prompt_template=completion_validation["continuation_template"],
+                    instructions=f"🚨 完成被拒绝！{completion_validation['continuation_instruction']}",
+                    context={
+                        "completion_blocked": True,
+                        "reason": completion_validation["reason"],
+                        "required_action": "continue_for_each",
+                        "current_iterations": completion_validation["current_iterations"],
+                        "total_iterations": completion_validation["total_iterations"]
+                    },
+                    next_action=f"🔄 必须继续for_each循环: {completion_validation['next_action']}",
+                    metadata={
+                        "completion_blocked": True,
+                        "for_each_continuation": True,
+                        "unauthorized_completion_attempt": True,
+                        "iteration_status": completion_validation["iteration_status"]
+                    },
+                )
+
+            # Completion is authorized - proceed normally
+            logger.info("✅ AUTHORIZED COMPLETION: All for_each iterations verified complete")
 
             # Calculate comprehensive quality metrics
             quality_metrics = self._calculate_comprehensive_quality_metrics(session)
@@ -1365,6 +1398,56 @@ class MCPTools:
             session_id=session_id,
             context={"error_message": error_message},
         )
+
+    def _validate_completion_eligibility(self, session: SessionState) -> Dict[str, Any]:
+        """
+        Validate whether the session is actually eligible for completion
+        CRITICAL: This prevents HOST from bypassing for_each iterations
+        """
+        try:
+            # Check all for_each steps for incomplete iterations
+            for step_name, current_count in session.iteration_count.items():
+                total_count = session.total_iterations.get(step_name, 0)
+                
+                if current_count < total_count and total_count > 0:
+                    # Found incomplete for_each - completion not allowed
+                    remaining = total_count - current_count
+                    
+                    return {
+                        "allowed": False,
+                        "reason": f"Active for_each in {step_name}: {current_count}/{total_count} (缺少{remaining}个)",
+                        "current_state": f"{step_name} at {current_count}/{total_count}",
+                        "required_step": step_name,
+                        "continuation_template": self.template_manager.get_template(
+                            "evidence_collection", {"sub_question": f"第{current_count + 1}个子问题"}
+                        ),
+                        "continuation_instruction": f"必须完成剩余{remaining}个子问题的{step_name}处理",
+                        "next_action": f"继续处理第{current_count + 1}个子问题",
+                        "current_iterations": current_count,
+                        "total_iterations": total_count,
+                        "iteration_status": {
+                            "current": current_count,
+                            "total": total_count,
+                            "remaining": remaining,
+                            "step": step_name
+                        }
+                    }
+            
+            # All for_each iterations complete - completion allowed
+            return {
+                "allowed": True,
+                "reason": "All for_each iterations completed",
+                "validation_passed": True
+            }
+            
+        except Exception as e:
+            logger.error(f"Error validating completion eligibility: {e}")
+            # Default to blocking completion if validation fails
+            return {
+                "allowed": False,
+                "reason": f"Validation error: {e}",
+                "error_occurred": True
+            }
 
     # Enhanced helper methods for complete_thinking tool
 
