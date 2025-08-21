@@ -276,6 +276,12 @@ class MCPTools:
                     "for_each_continuation": next_step_info.get(
                         "for_each_continuation", False
                     ),
+                    # Add explicit guidance for HOST
+                    "iteration_status": {
+                        "current": session.iteration_count.get(next_step_info["step_name"], 0),
+                        "total": session.total_iterations.get(next_step_info["step_name"], 0),
+                        "is_for_each": next_step_info.get("for_each_continuation", False)
+                    }
                 },
             )
 
@@ -694,12 +700,24 @@ class MCPTools:
     def _generate_step_instructions(
         self, next_step_info: Dict[str, Any], session: SessionState
     ) -> str:
-        """Generate contextual instructions for the step"""
+        """Generate contextual instructions for the step with for_each awareness"""
         base_instruction = next_step_info.get(
             "instructions", f"Execute {next_step_info['step_name']} step"
         )
 
-        # Add contextual guidance
+        # CRITICAL: For_each specific instructions take priority
+        if next_step_info.get("for_each_continuation"):
+            step_name = next_step_info["step_name"]
+            current_iterations = session.iteration_count.get(step_name, 0)
+            total_iterations = session.total_iterations.get(step_name, 0)
+            
+            if total_iterations > 0:
+                next_question_num = current_iterations + 1
+                return f"🔄 请处理第{next_question_num}个子问题 (共{total_iterations}个)。完成后必须调用next_step继续循环，不要擅自停止或跳转到其他步骤。"
+            else:
+                return "🔄 请处理下一个子问题。完成后必须调用next_step继续循环。"
+
+        # Add normal contextual guidance for non-for_each steps
         contextual_additions = []
 
         if session.context.get("complexity") == "complex":
@@ -719,10 +737,25 @@ class MCPTools:
     def _determine_next_action(
         self, next_step_info: Dict[str, Any], session: SessionState
     ) -> str:
-        """Determine the recommended next action"""
+        """Determine the recommended next action with for_each awareness"""
         step_name = next_step_info["step_name"]
-
-        if step_name in ["decompose", "evidence"]:
+        
+        # CRITICAL: Check if we're in for_each mode and give explicit guidance
+        if next_step_info.get("for_each_continuation"):
+            current_iterations = session.iteration_count.get(step_name, 0)
+            total_iterations = session.total_iterations.get(step_name, 0)
+            
+            if total_iterations > 0:
+                remaining = total_iterations - current_iterations
+                if remaining > 0:
+                    return f"🔄 继续处理第{current_iterations + 1}个子问题 (剩余{remaining}个)，请调用next_step继续for_each循环"
+                else:
+                    return "✅ 所有子问题已完成，将自动进入下一个思维阶段"
+            else:
+                return "🔄 继续处理下一个子问题，请调用next_step继续for_each循环"
+        
+        # Normal (non-for_each) step guidance
+        if step_name in ["decompose", "evidence", "collect_evidence"]:
             return "执行当前步骤后，建议调用analyze_step进行质量检查"
         elif step_name in ["evaluate", "reflect"]:
             return "完成当前步骤后，可以调用complete_thinking生成最终报告"
