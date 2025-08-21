@@ -201,7 +201,26 @@ class MCPTools:
                     logger.warning(f"Cannot increment {session.current_step} beyond {total_iterations}")
 
             if not next_step_info:
+                # CRITICAL: Check if we're in the middle of for_each before completing
+                session_for_completion_check = self.session_manager.get_session(input_data.session_id)
+                if session_for_completion_check:
+                    # Check if any step has active for_each iterations
+                    for step_name, current_count in session_for_completion_check.iteration_count.items():
+                        total_count = session_for_completion_check.total_iterations.get(step_name, 0)
+                        if current_count < total_count and total_count > 0:
+                            logger.warning(f"🚨 PREVENTED PREMATURE COMPLETION: {step_name} at {current_count}/{total_count}")
+                            logger.warning("🔍 Flow manager returned None but for_each is still active!")
+                            
+                            # Force continue the for_each step
+                            return {
+                                "step_name": step_name,
+                                "template_name": "evidence_collection",  # Default template
+                                "instructions": f"🚨 急救模式: 继续处理第{current_count + 1}个子问题",
+                                "for_each_continuation": True,
+                            }
+                
                 # Flow completed
+                logger.info("🏁 LEGITIMATE FLOW COMPLETION: All for_each iterations completed")
                 return self._handle_flow_completion(input_data.session_id)
 
             # Calculate correct step number for metadata based on the next step
@@ -1300,7 +1319,17 @@ class MCPTools:
         )
 
     def _handle_flow_completion(self, session_id: str) -> MCPToolOutput:
-        """Handle flow completion"""
+        """Handle flow completion with safety checks"""
+        # SAFETY CHECK: Verify no active for_each iterations before completing
+        session = self.session_manager.get_session(session_id)
+        if session:
+            for step_name, current_count in session.iteration_count.items():
+                total_count = session.total_iterations.get(step_name, 0)
+                if current_count < total_count and total_count > 0:
+                    logger.error(f"🚨 CRITICAL: Attempted completion with active for_each: {step_name} at {current_count}/{total_count}")
+                    raise RuntimeError(f"Cannot complete flow with active for_each iterations: {step_name} {current_count}/{total_count}")
+        
+        logger.info("🏁 CONFIRMED SAFE COMPLETION: All iterations verified complete")
         completion_prompt = self.template_manager.get_template(
             "flow_completion", {"session_id": session_id}
         )
@@ -1313,7 +1342,11 @@ class MCPTools:
             instructions="思维流程已完成，准备生成最终报告",
             context={"flow_completed": True},
             next_action="调用complete_thinking生成最终报告",
-            metadata={"ready_for_completion": True},
+            metadata={
+                "ready_for_completion": True,
+                "completion_verified": True,
+                "all_iterations_complete": True
+            },
         )
 
     def _handle_error(

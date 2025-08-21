@@ -543,32 +543,52 @@ class FlowManager:
 
         # Check if current step has for_each and needs to continue iterating
         if current_step_def and current_step_def.get("for_each"):
-            logger.info(f"Checking for_each continuation for step {current_step}")
+            logger.info(f"🔍 CHECKING for_each continuation for step {current_step}")
+            logger.info(f"📋 Step definition: {current_step_def}")
+            
+            if session_state:
+                current_iterations = session_state.iteration_count.get(current_step, 0)
+                total_iterations = session_state.total_iterations.get(current_step, 0)
+                logger.info(f"📊 Session state: {current_iterations}/{total_iterations} iterations")
+            else:
+                logger.warning("⚠️ No session state available for for_each check")
 
             # Check if we need to continue iterating
             should_continue = self._should_continue_for_each_iteration(
                 current_step_def, step_result, current_step, session_state
             )
+            
+            logger.info(f"🤖 For_each decision: should_continue={should_continue}")
 
             if should_continue:
-                logger.info(f"Continuing for_each iteration for step {current_step}")
+                logger.info(f"✅ CONTINUING for_each iteration for step {current_step}")
                 return {
                     "step_name": current_step_def["step_id"],
                     "template_name": current_step_def["template_name"],
                     "instructions": f"Continue {current_step_def['step_name']} step for next sub-question",
                     "for_each_continuation": True,
                 }
+            else:
+                logger.info(f"🛑 STOPPING for_each iteration for step {current_step}, advancing to next step")
 
         # Return next step if available
         if current_index >= 0 and current_index + 1 < len(steps):
             next_step = steps[current_index + 1]
-            logger.info(f"Advancing from {current_step} to {next_step['step_id']}")
+            logger.info(f"➡️ ADVANCING from {current_step} to {next_step['step_id']}")
             return {
                 "step_name": next_step["step_id"],
                 "template_name": next_step["template_name"],
                 "instructions": f"Execute {next_step['step_name']} step",
             }
-
+        
+        # CRITICAL: This returns None and triggers flow completion!
+        logger.warning(f"💥 FLOW COMPLETION TRIGGERED: No next step found for {current_step}")
+        logger.warning(f"📋 Current index: {current_index}, Total steps: {len(steps)}")
+        logger.warning(f"🔍 Available steps: {[s['step_id'] for s in steps]}")
+        
+        if session_state:
+            logger.warning(f"📊 Session state at completion: iterations={session_state.iteration_count}, totals={session_state.total_iterations}")
+        
         return None
 
     def _should_continue_for_each_iteration(
