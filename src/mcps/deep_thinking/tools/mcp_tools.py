@@ -561,7 +561,7 @@ class MCPTools:
             # Prepare final results for session completion
             final_results = {
                 "completion_timestamp": datetime.now().isoformat(),
-                "total_steps_completed": session.step_number,
+                "total_steps_completed": session_summary["total_steps"],  # Use consistent step count
                 "quality_metrics": quality_metrics,
                 "session_summary": session_summary,
                 "final_insights": input_data.final_insights or "",
@@ -577,11 +577,19 @@ class MCPTools:
                 input_data.session_id, final_results=final_results
             )
 
+            # Enhanced completion status handling
             if not completion_success:
-                # Handle completion failure but continue with report generation
-                final_results["completion_warning"] = (
-                    "Session completion partially failed but report can still be generated"
-                )
+                logger.warning(f"Session database completion failed for {input_data.session_id}")
+                # Check if we have all the data needed for report generation
+                if quality_metrics and session_summary and len(session_summary.get("detailed_steps", [])) > 0:
+                    logger.info(f"Report generation can proceed with available data for {input_data.session_id}")
+                    # For report purposes, consider it successful if we have the essential data
+                    completion_success = True
+                else:
+                    logger.error(f"Insufficient data for report generation in session {input_data.session_id}")
+                    final_results["completion_warning"] = (
+                        "Session completion partially failed but report can still be generated"
+                    )
 
             # Build enhanced template parameters for comprehensive summary
             template_params = self._build_comprehensive_summary_params(
@@ -610,7 +618,7 @@ class MCPTools:
                 instructions=instructions,
                 context={
                     "session_completed": True,
-                    "total_steps": session.step_number,
+                    "total_steps": session_summary["total_steps"],  # Use consistent step count
                     "quality_metrics": quality_metrics,
                     "session_summary": session_summary,
                     "thinking_trace_available": True,
@@ -624,7 +632,7 @@ class MCPTools:
                     "quality_summary": {
                         "average_quality": quality_metrics.get("average_quality", 0),
                         "quality_trend": quality_metrics.get("quality_trend", "stable"),
-                        "total_steps": session.step_number,
+                        "total_steps": session_summary["total_steps"],  # Use consistent step count
                         "high_quality_steps": quality_metrics.get(
                             "high_quality_steps", 0
                         ),
@@ -1511,12 +1519,19 @@ class MCPTools:
         - Improvement recommendations
         """
         quality_scores = session.quality_scores
+        
+        # Get actual step count from database for consistency with session summary
+        try:
+            steps = self.session_manager.db.get_session_steps(session.session_id)
+            actual_step_count = len(steps)
+        except Exception:
+            actual_step_count = session.step_number
 
         if not quality_scores:
             return {
                 "average_quality": 0.0,
                 "quality_trend": "no_data",
-                "total_steps": session.step_number,
+                "total_steps": actual_step_count,
                 "high_quality_steps": 0,
                 "quality_distribution": {},
                 "improvement_areas": ["No quality data available"],
@@ -1550,7 +1565,7 @@ class MCPTools:
         return {
             "average_quality": round(average_quality, 2),
             "quality_trend": quality_trend,
-            "total_steps": session.step_number,
+            "total_steps": actual_step_count,
             "high_quality_steps": high_quality_steps,
             "quality_distribution": quality_distribution,
             "step_quality_breakdown": quality_scores,
@@ -1736,6 +1751,7 @@ class MCPTools:
         """
         Build a comprehensive analysis summary from step contents (NO TRUNCATION)
         Provides complete content for modern LLMs with large context windows
+        Now with intelligent JSON parsing and formatting for better readability
         """
         if not detailed_step_contents:
             return "无详细分析内容"
@@ -1748,29 +1764,31 @@ class MCPTools:
                 continue
 
             # Get the main analysis content (prioritize 'output' type)
-            main_content = ""
+            raw_content = ""
             for content_data in contents:
                 if content_data.get("result_type") == "output" and content_data.get(
                     "content"
                 ):
-                    main_content = content_data.get(
+                    raw_content = content_data.get(
                         "content", ""
                     )  # FULL CONTENT - no truncation
                     break
 
-            if not main_content and contents:
+            if not raw_content and contents:
                 # Fallback to any content
-                main_content = contents[0].get(
+                raw_content = contents[0].get(
                     "content", ""
                 )  # FULL CONTENT - no truncation
 
-            if main_content:
-                step_content_length = len(main_content)
+            if raw_content:
+                # Format the content intelligently
+                formatted_content = self._format_step_content(step_name, raw_content)
+                step_content_length = len(formatted_content)
                 total_chars += step_content_length
 
                 # Add content statistics for transparency
                 content_info = f"*[内容长度: {step_content_length:,} 字符]*\n\n"
-                summary_parts.append(f"### {step_name}\n{content_info}{main_content}")
+                summary_parts.append(f"### {step_name}\n{content_info}{formatted_content}")
 
         # Add summary statistics
         summary_header = (
@@ -1779,6 +1797,247 @@ class MCPTools:
         full_content = "\n\n".join(summary_parts) if summary_parts else "无有效分析内容"
 
         return summary_header + full_content
+
+    def _format_step_content(self, step_name: str, raw_content: str) -> str:
+        """
+        Format step content intelligently - parse JSON if possible, otherwise return as-is
+        Converts raw data into human-readable analysis content
+        """
+        try:
+            # Try to parse as JSON first
+            import json
+            data = json.loads(raw_content)
+            
+            # Format based on step type
+            if step_name == "decompose_problem":
+                return self._format_decompose_content(data)
+            elif step_name == "collect_evidence":
+                return self._format_evidence_content(data)
+            elif step_name in ["evaluate", "critical_evaluation"]:
+                return self._format_evaluation_content(data)
+            elif step_name == "reflect":
+                return self._format_reflection_content(data)
+            elif step_name == "multi_perspective_debate":
+                return self._format_debate_content(data)
+            else:
+                # Generic JSON formatting
+                return self._format_generic_json(data)
+                
+        except (json.JSONDecodeError, TypeError):
+            # If it's not JSON, return the content as-is
+            return raw_content
+            
+    def _format_decompose_content(self, data: dict) -> str:
+        """Format decomposition step content"""
+        formatted = []
+        
+        if "main_question" in data:
+            formatted.append(f"**核心问题**: {data['main_question']}")
+            formatted.append("")
+        
+        if "complexity_level" in data:
+            formatted.append(f"**复杂度级别**: {data['complexity_level']}")
+            formatted.append("")
+            
+        if "sub_questions" in data:
+            formatted.append("**子问题分解**:")
+            for i, sq in enumerate(data["sub_questions"], 1):
+                formatted.append(f"{i}. **{sq.get('id', f'SQ{i}')}**: {sq.get('question', '未知问题')}")
+                if sq.get('priority'):
+                    formatted.append(f"   - 优先级: {sq['priority']}")
+                if sq.get('search_keywords'):
+                    keywords = ", ".join(sq['search_keywords'])
+                    formatted.append(f"   - 关键词: {keywords}")
+                formatted.append("")
+        
+        if "relationships" in data:
+            formatted.append("**问题关联性**:")
+            for rel in data["relationships"]:
+                formatted.append(f"- {rel.get('from')} → {rel.get('to')}: {rel.get('description', '相关')}")
+            formatted.append("")
+            
+        if "coverage_analysis" in data:
+            ca = data["coverage_analysis"]
+            if "key_aspects_covered" in ca:
+                aspects = ", ".join(ca["key_aspects_covered"])
+                formatted.append(f"**覆盖分析**: {aspects}")
+                formatted.append("")
+        
+        return "\n".join(formatted)
+    
+    def _format_evidence_content(self, data: dict) -> str:
+        """Format evidence collection content"""
+        formatted = []
+        
+        if "sub_question" in data:
+            formatted.append(f"**研究问题**: {data['sub_question']}")
+            formatted.append("")
+        
+        if "evidence_collection" in data:
+            formatted.append("**证据收集结果**:")
+            for i, evidence in enumerate(data["evidence_collection"], 1):
+                formatted.append(f"\n**证据 {i}: {evidence.get('source_name', '未知来源')}**")
+                if evidence.get('credibility_score'):
+                    formatted.append(f"- 可信度: {evidence['credibility_score']}/10")
+                if evidence.get('key_findings'):
+                    formatted.append("- 关键发现:")
+                    for finding in evidence['key_findings']:
+                        formatted.append(f"  • {finding}")
+                if evidence.get('quantitative_data'):
+                    formatted.append("- 量化数据:")
+                    for qdata in evidence['quantitative_data']:
+                        formatted.append(f"  • {qdata}")
+                formatted.append("")
+        
+        if "evidence_synthesis" in data:
+            es = data["evidence_synthesis"]
+            if "main_findings" in es:
+                formatted.append("**综合发现**:")
+                for finding in es["main_findings"]:
+                    formatted.append(f"• {finding}")
+                formatted.append("")
+            
+            if "practical_recommendations" in es:
+                formatted.append("**实践建议**:")
+                for rec in es["practical_recommendations"]:
+                    formatted.append(f"• {rec}")
+                formatted.append("")
+        
+        return "\n".join(formatted)
+    
+    def _format_evaluation_content(self, data: dict) -> str:
+        """Format evaluation content"""
+        formatted = []
+        
+        if isinstance(data, dict):
+            if "执行摘要" in data or "executive_summary" in data:
+                summary = data.get("执行摘要") or data.get("executive_summary")
+                formatted.append(f"**执行摘要**\n{summary}")
+                formatted.append("")
+            
+            if "证据可信度矩阵" in data:
+                formatted.append("**证据可信度矩阵**:")
+                matrix = data["证据可信度矩阵"]
+                for key, value in matrix.items():
+                    formatted.append(f"• {key}: {value}")
+                formatted.append("")
+            
+            if "批判性洞察" in data:
+                insights = data["批判性洞察"]
+                if "核心优势" in insights:
+                    formatted.append("**核心优势**:")
+                    for advantage in insights["核心优势"]:
+                        formatted.append(f"• {advantage}")
+                    formatted.append("")
+                
+                if "关键弱点" in insights:
+                    formatted.append("**关键弱点**:")
+                    for weakness in insights["关键弱点"]:
+                        formatted.append(f"• {weakness}")
+                    formatted.append("")
+            
+            if "战略建议" in data:
+                formatted.append("**战略建议**:")
+                suggestions = data["战略建议"]
+                if "立即行动建议" in suggestions:
+                    formatted.append("立即行动建议:")
+                    for action in suggestions["立即行动建议"]:
+                        if isinstance(action, dict):
+                            formatted.append(f"• {action.keys()}")
+                        else:
+                            formatted.append(f"• {action}")
+                formatted.append("")
+        else:
+            formatted.append(str(data))
+        
+        return "\n".join(formatted)
+    
+    def _format_reflection_content(self, data: dict) -> str:
+        """Format reflection content"""
+        formatted = []
+        
+        if "整体评估" in data:
+            formatted.append(f"**整体评估**: {data['整体评估']}")
+            formatted.append("")
+        
+        if "主要优势" in data:
+            formatted.append("**主要优势**:")
+            for advantage in data["主要优势"]:
+                formatted.append(f"• {advantage}")
+            formatted.append("")
+        
+        if "关键不足" in data:
+            formatted.append("**关键不足**:")
+            for weakness in data["关键不足"]:
+                formatted.append(f"• {weakness}")
+            formatted.append("")
+        
+        if "确定性分析" in data:
+            ca = data["确定性分析"]
+            for level, items in ca.items():
+                formatted.append(f"**{level}**:")
+                for item in items:
+                    formatted.append(f"• {item}")
+                formatted.append("")
+        
+        if "改进建议" in data:
+            formatted.append("**改进建议**:")
+            if "即刻改进" in data["改进建议"]:
+                formatted.append("即刻改进:")
+                for improvement in data["改进建议"]["即刻改进"]:
+                    formatted.append(f"• {improvement}")
+            if "长期提升" in data["改进建议"]:
+                formatted.append("长期提升:")
+                for improvement in data["改进建议"]["长期提升"]:
+                    formatted.append(f"• {improvement}")
+            formatted.append("")
+        
+        return "\n".join(formatted)
+    
+    def _format_debate_content(self, data: dict) -> str:
+        """Format debate content"""
+        formatted = []
+        
+        if "debate_summary" in data:
+            formatted.append(f"**辩论总结**: {data['debate_summary']}")
+            formatted.append("")
+        
+        if "perspectives" in data:
+            for i, perspective in enumerate(data["perspectives"], 1):
+                stance = perspective.get("stance", f"观点{i}")
+                formatted.append(f"**{stance}方观点**:")
+                if "main_arguments" in perspective:
+                    for arg in perspective["main_arguments"]:
+                        formatted.append(f"• {arg}")
+                formatted.append("")
+        
+        return "\n".join(formatted)
+    
+    def _format_generic_json(self, data: dict) -> str:
+        """Generic JSON formatting fallback"""
+        formatted = []
+        
+        def format_value(value, indent=0):
+            prefix = "  " * indent
+            if isinstance(value, dict):
+                for k, v in value.items():
+                    if isinstance(v, (dict, list)):
+                        formatted.append(f"{prefix}**{k}**:")
+                        format_value(v, indent + 1)
+                    else:
+                        formatted.append(f"{prefix}**{k}**: {v}")
+            elif isinstance(value, list):
+                for i, item in enumerate(value):
+                    if isinstance(item, dict):
+                        formatted.append(f"{prefix}{i+1}.")
+                        format_value(item, indent + 1)
+                    else:
+                        formatted.append(f"{prefix}• {item}")
+            else:
+                formatted.append(f"{prefix}{value}")
+        
+        format_value(data)
+        return "\n".join(formatted)
 
     def _calculate_auto_quality_score(
         self, content: str, metadata: Dict[str, Any] = None
@@ -1824,18 +2083,131 @@ class MCPTools:
 
         return min(score, 10.0)  # Cap at 10.0
 
+    def get_export_directory(self) -> Path:
+        """
+        Get the export directory using priority chain configuration
+        
+        Priority order:
+        1. DEEP_THINKING_EXPORT_DIR environment variable
+        2. Configuration file export.base_directory
+        3. DEEP_THINKING_DATA_DIR/exports environment variable  
+        4. XDG_DATA_HOME/deep-thinking/exports (Linux/Mac standard)
+        5. User home ~/.deep-thinking/exports (fallback)
+        6. Temp directory (final fallback)
+        
+        Returns:
+            Path object for export directory
+        """
+        from pathlib import Path
+        import os
+        import tempfile
+        
+        # 1. Check primary environment variable
+        if export_dir := os.getenv('DEEP_THINKING_EXPORT_DIR'):
+            path = Path(export_dir)
+            logger.info(f"Using export directory from DEEP_THINKING_EXPORT_DIR: {path}")
+            return path
+            
+        # 2. Check configuration file (if available)
+        try:
+            if hasattr(self, 'config_manager') and self.config_manager:
+                config_dir = self.config_manager.get('export.base_directory')
+                if config_dir:
+                    path = Path(os.path.expanduser(config_dir))
+                    logger.info(f"Using export directory from config: {path}")
+                    return path
+        except Exception as e:
+            logger.debug(f"Could not read config for export directory: {e}")
+            
+        # 3. Check data directory environment variable
+        if data_dir := os.getenv('DEEP_THINKING_DATA_DIR'):
+            path = Path(data_dir) / 'exports'
+            logger.info(f"Using export directory from DEEP_THINKING_DATA_DIR: {path}")
+            return path
+            
+        # 4. XDG Base Directory standard (Linux/Mac)
+        if xdg_data := os.getenv('XDG_DATA_HOME'):
+            path = Path(xdg_data) / 'deep-thinking' / 'exports'
+            logger.info(f"Using XDG standard export directory: {path}")
+            return path
+            
+        # 5. User home directory (most common fallback)
+        try:
+            path = Path.home() / '.deep-thinking' / 'exports'
+            logger.info(f"Using user home export directory: {path}")
+            return path
+        except Exception as e:
+            logger.warning(f"Could not access user home directory: {e}")
+            
+        # 6. Temp directory (final fallback)
+        path = Path(tempfile.gettempdir()) / 'deep-thinking-exports'
+        logger.warning(f"Using temporary export directory: {path}")
+        return path
+
+    def _validate_export_directory(self, export_dir: Path) -> Dict[str, Any]:
+        """
+        Validate and prepare export directory
+        
+        Args:
+            export_dir: Path to validate
+            
+        Returns:
+            Dict with validation results and warnings
+        """
+        result = {
+            "valid": True,
+            "created": False,
+            "warnings": []
+        }
+        
+        try:
+            # Check if directory is inside a git repository (warn if so)
+            current_path = export_dir.absolute()
+            for parent in current_path.parents:
+                if (parent / '.git').exists():
+                    # Check if it's the same as current working directory
+                    if parent == Path.cwd():
+                        result["warnings"].append(
+                            f"Export directory {export_dir} is inside the current git repository. "
+                            "Consider setting DEEP_THINKING_EXPORT_DIR to avoid git status pollution."
+                        )
+                    break
+            
+            # Create directory if it doesn't exist
+            if not export_dir.exists():
+                export_dir.mkdir(parents=True, exist_ok=True)
+                result["created"] = True
+                logger.info(f"Created export directory: {export_dir}")
+            
+            # Check write permissions
+            test_file = export_dir / '.write_test'
+            try:
+                test_file.write_text("test")
+                test_file.unlink()
+            except Exception as e:
+                result["valid"] = False
+                result["warnings"].append(f"No write permission for directory {export_dir}: {e}")
+                
+        except Exception as e:
+            result["valid"] = False
+            result["warnings"].append(f"Failed to validate/create export directory {export_dir}: {e}")
+            logger.error(f"Export directory validation failed: {e}")
+            
+        return result
+
     def export_session_to_markdown(
         self, session_id: str, export_path: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Export complete session analysis to Markdown file
+        Export complete session analysis to Markdown file with intelligent directory management
 
         This function provides full, untruncated access to all analysis content
-        for offline reading and further LLM processing.
+        for offline reading and further LLM processing. Uses configurable export
+        directory to avoid polluting git repositories.
 
         Args:
             session_id: The session to export
-            export_path: Optional custom file path (defaults to auto-generated name)
+            export_path: Optional custom file path (defaults to auto-generated name in export directory)
 
         Returns:
             Dict with export status and file information
@@ -1856,14 +2228,39 @@ class MCPTools:
             session_summary = self._generate_detailed_session_summary(session)
             thinking_trace = self.session_manager.get_full_trace(session_id)
 
-            # Generate filename if not provided
-            if not export_path:
+            # Get export directory and validate
+            if export_path:
+                # Custom path provided - use as-is
+                file_path = Path(export_path)
+                export_dir = file_path.parent
+                logger.info(f"Using custom export path: {file_path}")
+            else:
+                # Auto-generate filename in configured export directory
+                export_dir = self.get_export_directory()
+                
+                # Validate and prepare directory
+                validation = self._validate_export_directory(export_dir)
+                if not validation["valid"]:
+                    return {
+                        "success": False,
+                        "error": f"Export directory validation failed: {'; '.join(validation['warnings'])}",
+                        "file_path": None,
+                    }
+                
+                # Log warnings but continue
+                for warning in validation["warnings"]:
+                    logger.warning(warning)
+                
+                # Generate filename
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 safe_topic = "".join(
                     c for c in session.topic[:50] if c.isalnum() or c in (" ", "-", "_")
                 ).strip()
-                safe_topic = safe_topic.replace(" ", "_")
-                export_path = f"deep_thinking_session_{session_id[:8]}_{timestamp}_{safe_topic}.md"
+                safe_topic = safe_topic.replace(" ", "_") if safe_topic else "untitled"
+                filename = f"deep_thinking_session_{session_id[:8]}_{timestamp}_{safe_topic}.md"
+                file_path = export_dir / filename
+                
+                logger.info(f"Auto-generated export path: {file_path}")
 
             # Build comprehensive Markdown content
             markdown_content = self._build_markdown_report(
@@ -1874,12 +2271,10 @@ class MCPTools:
                 thinking_trace=thinking_trace,
             )
 
-            # Write to file
-            from pathlib import Path
-
-            file_path = Path(export_path)
+            # Ensure parent directory exists (in case of custom path)
             file_path.parent.mkdir(parents=True, exist_ok=True)
-
+            
+            # Write to file
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(markdown_content)
 

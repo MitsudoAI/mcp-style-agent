@@ -75,3 +75,22 @@ cache:
   evidence_ttl: 3600
   evaluation_cache_size: 500
   debate_cache_size: 100
+
+export:
+  # Base directory for exported files
+  # Supports environment variable expansion (${VAR} or ${VAR:-default})
+  base_directory: "${DEEP_THINKING_EXPORT_DIR:-~/.deep-thinking/exports}"
+  
+  # File organization options  
+  organize_by_date: false  # Creates YYYY-MM-DD subdirectories
+  max_file_count: 100      # Auto-cleanup old files (0 = disabled)
+  
+  # File naming pattern
+  file_naming:
+    pattern: "deep_thinking_session_{session_id}_{timestamp}_{topic}.md"
+    sanitize_topic: true    # Remove special characters from topic
+    max_topic_length: 50    # Truncate long topics
+    
+  # Directory validation
+  warn_git_pollution: true  # Warn if export dir is inside git repo
+  create_missing_dirs: true # Auto-create export directories

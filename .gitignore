@@ -78,3 +78,9 @@ docs/drafts/
 *_results/
 *_test_*.json
 test_*.json
+
+# Deep Thinking Exports (avoid git pollution)
+exports/
+.deep-thinking/
+deep_thinking_session_*.md
+*深度分析报告*.md
