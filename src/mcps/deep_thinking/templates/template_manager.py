@@ -1056,38 +1056,71 @@ class TemplateManager:
             # Get file modification time
             last_modified = template_path.stat().st_mtime
 
-            # Create a new version entry
-            version_id = str(uuid.uuid4())
-            version_entry = {
-                "version_id": version_id,
-                "created_at": datetime.now().isoformat(),
-                "content": content,
-                "is_active": True,
-                "loaded_from_file": True,
-                "file_modified_time": last_modified,
-            }
+            # Check if content has changed to avoid creating duplicate versions
+            should_create_version = True
+            if name in self.cache:
+                # Compare with existing content
+                existing_content = self.cache[name]
+                existing_modified_time = self.metadata.get(name, {}).get("last_loaded_time", 0)
+                
+                # Don't create new version if content and modification time are the same
+                if content == existing_content and last_modified == existing_modified_time:
+                    should_create_version = False
 
-            # Initialize version history if needed
-            if name not in self.versions:
-                self.versions[name] = []
+            if should_create_version:
+                # Create a new version entry only if content has changed
+                version_id = str(uuid.uuid4())
+                version_entry = {
+                    "version_id": version_id,
+                    "created_at": datetime.now().isoformat(),
+                    "content": content,
+                    "is_active": True,
+                    "loaded_from_file": True,
+                    "file_modified_time": last_modified,
+                }
 
-            # Mark previous versions as inactive
-            for version in self.versions[name]:
-                version["is_active"] = False
+                # Initialize version history if needed
+                if name not in self.versions:
+                    self.versions[name] = []
 
-            # Add the new version
-            self.versions[name].append(version_entry)
+                # Mark previous versions as inactive
+                for version in self.versions[name]:
+                    version["is_active"] = False
 
-            # Update cache and metadata
-            self.cache[name] = content
-            self.metadata[name] = {
-                "added_at": datetime.now(),
-                "size": len(content),
-                "usage_count": 0,
-                "current_version": version_id,
-                "loaded_from_file": True,
-                "last_loaded_time": last_modified,
-            }
+                # Add the new version
+                self.versions[name].append(version_entry)
+
+                # Update cache and metadata
+                self.cache[name] = content
+                self.metadata[name] = {
+                    "added_at": datetime.now(),
+                    "size": len(content),
+                    "usage_count": self.metadata.get(name, {}).get("usage_count", 0),  # Preserve usage count
+                    "current_version": version_id,
+                    "loaded_from_file": True,
+                    "last_loaded_time": last_modified,
+                }
+            else:
+                # Just update the cache without creating a new version
+                self.cache[name] = content
+                # Ensure metadata exists for templates loaded without version creation
+                if name not in self.metadata:
+                    # Find the current active version or create minimal metadata
+                    current_version = None
+                    if name in self.versions:
+                        for version in self.versions[name]:
+                            if version.get("is_active", False):
+                                current_version = version["version_id"]
+                                break
+                    
+                    self.metadata[name] = {
+                        "added_at": datetime.now(),
+                        "size": len(content),
+                        "usage_count": 0,
+                        "current_version": current_version,
+                        "loaded_from_file": True,
+                        "last_loaded_time": last_modified,
+                    }
 
             return True
         except Exception as e:
