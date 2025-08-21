@@ -7,6 +7,7 @@ These tools follow the zero-cost principle:
 - No LLM API calls from the server side
 """
 
+import json
 import logging
 import uuid
 from datetime import datetime
@@ -53,7 +54,7 @@ class MCPTools:
         self.template_manager = template_manager
         self.flow_manager = flow_manager
         self.error_handler = MCPErrorHandler(session_manager, template_manager)
-        # Track active sessions to prevent state inconsistencies  
+        # Track active sessions to prevent state inconsistencies
         self._active_sessions = {}
 
     def start_thinking(self, input_data: StartThinkingInput) -> MCPToolOutput:
@@ -179,38 +180,59 @@ class MCPTools:
             next_step_info = self._determine_next_step_with_context(
                 session, input_data.step_result, input_data.quality_feedback
             )
-            
+
             # IMPORTANT: If we're continuing for_each, increment the iteration EXACTLY ONCE
             if next_step_info and next_step_info.get("for_each_continuation"):
                 # Only increment if we haven't already processed this sub-question
-                current_iterations = session.iteration_count.get(session.current_step, 0)
+                current_iterations = session.iteration_count.get(
+                    session.current_step, 0
+                )
                 total_iterations = session.total_iterations.get(session.current_step, 0)
-                
-                logger.info(f"FOR_EACH CONTINUATION: {session.current_step} at {current_iterations}/{total_iterations}")
-                
+
+                logger.info(
+                    f"FOR_EACH CONTINUATION: {session.current_step} at {current_iterations}/{total_iterations}"
+                )
+
                 # Increment iteration counter for the NEXT sub-question
                 if current_iterations < total_iterations:
-                    session.iteration_count[session.current_step] = current_iterations + 1
+                    session.iteration_count[session.current_step] = (
+                        current_iterations + 1
+                    )
                     new_count = session.iteration_count[session.current_step]
-                    logger.info(f"INCREMENTED {session.current_step}: {current_iterations} -> {new_count}/{total_iterations}")
-                    
+                    logger.info(
+                        f"INCREMENTED {session.current_step}: {current_iterations} -> {new_count}/{total_iterations}"
+                    )
+
                     # Update session state immediately in both caches
                     self._active_sessions[session.session_id] = session
                     self.session_manager._active_sessions[session.session_id] = session
                 else:
-                    logger.warning(f"Cannot increment {session.current_step} beyond {total_iterations}")
+                    logger.warning(
+                        f"Cannot increment {session.current_step} beyond {total_iterations}"
+                    )
 
             if not next_step_info:
                 # CRITICAL: Check if we're in the middle of for_each before completing
-                session_for_completion_check = self.session_manager.get_session(input_data.session_id)
+                session_for_completion_check = self.session_manager.get_session(
+                    input_data.session_id
+                )
                 if session_for_completion_check:
                     # Check if any step has active for_each iterations
-                    for step_name, current_count in session_for_completion_check.iteration_count.items():
-                        total_count = session_for_completion_check.total_iterations.get(step_name, 0)
+                    for (
+                        step_name,
+                        current_count,
+                    ) in session_for_completion_check.iteration_count.items():
+                        total_count = session_for_completion_check.total_iterations.get(
+                            step_name, 0
+                        )
                         if current_count < total_count and total_count > 0:
-                            logger.warning(f"🚨 PREVENTED PREMATURE COMPLETION: {step_name} at {current_count}/{total_count}")
-                            logger.warning("🔍 Flow manager returned None but for_each is still active!")
-                            
+                            logger.warning(
+                                f"🚨 PREVENTED PREMATURE COMPLETION: {step_name} at {current_count}/{total_count}"
+                            )
+                            logger.warning(
+                                "🔍 Flow manager returned None but for_each is still active!"
+                            )
+
                             # Force continue the for_each step
                             return {
                                 "step_name": step_name,
@@ -218,9 +240,11 @@ class MCPTools:
                                 "instructions": f"🚨 急救模式: 继续处理第{current_count + 1}个子问题",
                                 "for_each_continuation": True,
                             }
-                
+
                 # Flow completed
-                logger.info("🏁 LEGITIMATE FLOW COMPLETION: All for_each iterations completed")
+                logger.info(
+                    "🏁 LEGITIMATE FLOW COMPLETION: All for_each iterations completed"
+                )
                 return self._handle_flow_completion(input_data.session_id)
 
             # Calculate correct step number for metadata based on the next step
@@ -297,10 +321,16 @@ class MCPTools:
                     ),
                     # Add explicit guidance for HOST
                     "iteration_status": {
-                        "current": session.iteration_count.get(next_step_info["step_name"], 0),
-                        "total": session.total_iterations.get(next_step_info["step_name"], 0),
-                        "is_for_each": next_step_info.get("for_each_continuation", False)
-                    }
+                        "current": session.iteration_count.get(
+                            next_step_info["step_name"], 0
+                        ),
+                        "total": session.total_iterations.get(
+                            next_step_info["step_name"], 0
+                        ),
+                        "is_for_each": next_step_info.get(
+                            "for_each_continuation", False
+                        ),
+                    },
                 },
             )
 
@@ -475,13 +505,17 @@ class MCPTools:
             session = self.session_manager.get_session(input_data.session_id)
             if not session:
                 return self._handle_session_not_found(input_data.session_id)
-            
+
             # 🚨 CRITICAL: Validate that completion is actually allowed
             completion_validation = self._validate_completion_eligibility(session)
             if not completion_validation["allowed"]:
-                logger.warning(f"🚫 BLOCKED UNAUTHORIZED COMPLETION: {completion_validation['reason']}")
-                logger.warning(f"📊 Current state: {completion_validation['current_state']}")
-                
+                logger.warning(
+                    f"🚫 BLOCKED UNAUTHORIZED COMPLETION: {completion_validation['reason']}"
+                )
+                logger.warning(
+                    f"📊 Current state: {completion_validation['current_state']}"
+                )
+
                 # Force HOST to continue the incomplete for_each
                 return MCPToolOutput(
                     tool_name=MCPToolName.NEXT_STEP,  # Force next_step instead of completion
@@ -493,20 +527,27 @@ class MCPTools:
                         "completion_blocked": True,
                         "reason": completion_validation["reason"],
                         "required_action": "continue_for_each",
-                        "current_iterations": completion_validation["current_iterations"],
-                        "total_iterations": completion_validation["total_iterations"]
+                        "current_iterations": completion_validation[
+                            "current_iterations"
+                        ],
+                        "total_iterations": completion_validation["total_iterations"],
                     },
                     next_action=f"🔄 必须继续for_each循环: {completion_validation['next_action']}",
                     metadata={
                         "completion_blocked": True,
                         "for_each_continuation": True,
                         "unauthorized_completion_attempt": True,
-                        "iteration_status": completion_validation["iteration_status"]
+                        "iteration_status": completion_validation["iteration_status"],
                     },
                 )
 
             # Completion is authorized - proceed normally
-            logger.info("✅ AUTHORIZED COMPLETION: All for_each iterations verified complete")
+            logger.info(
+                "✅ AUTHORIZED COMPLETION: All for_each iterations verified complete"
+            )
+
+            # Refresh session data to ensure we have the latest quality scores
+            self._refresh_session_quality_data(session)
 
             # Calculate comprehensive quality metrics
             quality_metrics = self._calculate_comprehensive_quality_metrics(session)
@@ -762,7 +803,7 @@ class MCPTools:
             step_name = next_step_info["step_name"]
             current_iterations = session.iteration_count.get(step_name, 0)
             total_iterations = session.total_iterations.get(step_name, 0)
-            
+
             if total_iterations > 0:
                 next_question_num = current_iterations + 1
                 return f"🔄 请处理第{next_question_num}个子问题 (共{total_iterations}个)。完成后必须调用next_step继续循环，不要擅自停止或跳转到其他步骤。"
@@ -791,12 +832,12 @@ class MCPTools:
     ) -> str:
         """Determine the recommended next action with for_each awareness"""
         step_name = next_step_info["step_name"]
-        
+
         # CRITICAL: Check if we're in for_each mode and give explicit guidance
         if next_step_info.get("for_each_continuation"):
             current_iterations = session.iteration_count.get(step_name, 0)
             total_iterations = session.total_iterations.get(step_name, 0)
-            
+
             if total_iterations > 0:
                 remaining = total_iterations - current_iterations
                 if remaining > 0:
@@ -805,7 +846,7 @@ class MCPTools:
                     return "✅ 所有子问题已完成，将自动进入下一个思维阶段"
             else:
                 return "🔄 继续处理下一个子问题，请调用next_step继续for_each循环"
-        
+
         # Normal (non-for_each) step guidance
         if step_name in ["decompose", "evidence", "collect_evidence"]:
             return "执行当前步骤后，建议调用analyze_step进行质量检查"
@@ -1359,9 +1400,13 @@ class MCPTools:
             for step_name, current_count in session.iteration_count.items():
                 total_count = session.total_iterations.get(step_name, 0)
                 if current_count < total_count and total_count > 0:
-                    logger.error(f"🚨 CRITICAL: Attempted completion with active for_each: {step_name} at {current_count}/{total_count}")
-                    raise RuntimeError(f"Cannot complete flow with active for_each iterations: {step_name} {current_count}/{total_count}")
-        
+                    logger.error(
+                        f"🚨 CRITICAL: Attempted completion with active for_each: {step_name} at {current_count}/{total_count}"
+                    )
+                    raise RuntimeError(
+                        f"Cannot complete flow with active for_each iterations: {step_name} {current_count}/{total_count}"
+                    )
+
         logger.info("🏁 CONFIRMED SAFE COMPLETION: All iterations verified complete")
         completion_prompt = self.template_manager.get_template(
             "flow_completion", {"session_id": session_id}
@@ -1378,7 +1423,7 @@ class MCPTools:
             metadata={
                 "ready_for_completion": True,
                 "completion_verified": True,
-                "all_iterations_complete": True
+                "all_iterations_complete": True,
             },
         )
 
@@ -1408,18 +1453,19 @@ class MCPTools:
             # Check all for_each steps for incomplete iterations
             for step_name, current_count in session.iteration_count.items():
                 total_count = session.total_iterations.get(step_name, 0)
-                
+
                 if current_count < total_count and total_count > 0:
                     # Found incomplete for_each - completion not allowed
                     remaining = total_count - current_count
-                    
+
                     return {
                         "allowed": False,
                         "reason": f"Active for_each in {step_name}: {current_count}/{total_count} (缺少{remaining}个)",
                         "current_state": f"{step_name} at {current_count}/{total_count}",
                         "required_step": step_name,
                         "continuation_template": self.template_manager.get_template(
-                            "evidence_collection", {"sub_question": f"第{current_count + 1}个子问题"}
+                            "evidence_collection",
+                            {"sub_question": f"第{current_count + 1}个子问题"},
                         ),
                         "continuation_instruction": f"必须完成剩余{remaining}个子问题的{step_name}处理",
                         "next_action": f"继续处理第{current_count + 1}个子问题",
@@ -1429,24 +1475,24 @@ class MCPTools:
                             "current": current_count,
                             "total": total_count,
                             "remaining": remaining,
-                            "step": step_name
-                        }
+                            "step": step_name,
+                        },
                     }
-            
+
             # All for_each iterations complete - completion allowed
             return {
                 "allowed": True,
                 "reason": "All for_each iterations completed",
-                "validation_passed": True
+                "validation_passed": True,
             }
-            
+
         except Exception as e:
             logger.error(f"Error validating completion eligibility: {e}")
             # Default to blocking completion if validation fails
             return {
                 "allowed": False,
                 "reason": f"Validation error: {e}",
-                "error_occurred": True
+                "error_occurred": True,
             }
 
     # Enhanced helper methods for complete_thinking tool
@@ -1605,13 +1651,21 @@ class MCPTools:
                 step_results_map[step_id] = []
             step_results_map[step_id].append(result)
 
-        # Build detailed step summary
+        # Build detailed step summary with proper quality score synchronization
         detailed_steps = []
         for step in steps:
+            step_name = step.get("step_name", "unknown")
+
+            # CRITICAL FIX: Use session.quality_scores as primary source
+            # Fall back to database value only if session doesn't have it
+            quality_score = session.quality_scores.get(step_name) or step.get(
+                "quality_score"
+            )
+
             step_summary = {
-                "step_name": step.get("step_name", "unknown"),
+                "step_name": step_name,
                 "step_type": step.get("step_type", "general"),
-                "quality_score": step.get("quality_score"),
+                "quality_score": quality_score,
                 "execution_time_ms": step.get("execution_time_ms"),
                 "results_count": len(step_results_map.get(step.get("id"), [])),
                 "timestamp": step.get("created_at"),
@@ -1636,6 +1690,402 @@ class MCPTools:
             return round(duration, 2)
         return 0.0
 
+    def _extract_detailed_step_contents(self, session_id: str) -> Dict[str, Any]:
+        """
+        Extract detailed contents from all steps for comprehensive summary
+        Returns step contents grouped by step with actual analysis content
+        """
+        try:
+            # Get all step results from database
+            results = self.session_manager.db.get_step_results(session_id)
+            steps = self.session_manager.db.get_session_steps(session_id)
+
+            # Create a mapping of step_id to step_name
+            step_id_to_name = {}
+            for step in steps:
+                step_id_to_name[step.get("id")] = step.get("step_name", "unknown")
+
+            # Group results by step
+            step_contents = {}
+            for result in results:
+                step_id = result.get("step_id")
+                step_name = step_id_to_name.get(step_id, f"step_{step_id}")
+
+                if step_name not in step_contents:
+                    step_contents[step_name] = []
+
+                content_data = {
+                    "content": result.get("content", ""),
+                    "result_type": result.get("result_type", "output"),
+                    "metadata": result.get("metadata", {}),
+                    "quality_indicators": result.get("quality_indicators", {}),
+                    "timestamp": result.get("created_at", ""),
+                }
+                step_contents[step_name].append(content_data)
+
+            return step_contents
+        except Exception as e:
+            logger.error(
+                f"Error extracting detailed step contents for {session_id}: {e}"
+            )
+            return {}
+
+    def _build_step_analysis_summary(
+        self, detailed_step_contents: Dict[str, Any]
+    ) -> str:
+        """
+        Build a comprehensive analysis summary from step contents (NO TRUNCATION)
+        Provides complete content for modern LLMs with large context windows
+        """
+        if not detailed_step_contents:
+            return "无详细分析内容"
+
+        summary_parts = []
+        total_chars = 0
+
+        for step_name, contents in detailed_step_contents.items():
+            if not contents:
+                continue
+
+            # Get the main analysis content (prioritize 'output' type)
+            main_content = ""
+            for content_data in contents:
+                if content_data.get("result_type") == "output" and content_data.get(
+                    "content"
+                ):
+                    main_content = content_data.get(
+                        "content", ""
+                    )  # FULL CONTENT - no truncation
+                    break
+
+            if not main_content and contents:
+                # Fallback to any content
+                main_content = contents[0].get(
+                    "content", ""
+                )  # FULL CONTENT - no truncation
+
+            if main_content:
+                step_content_length = len(main_content)
+                total_chars += step_content_length
+
+                # Add content statistics for transparency
+                content_info = f"*[内容长度: {step_content_length:,} 字符]*\n\n"
+                summary_parts.append(f"### {step_name}\n{content_info}{main_content}")
+
+        # Add summary statistics
+        summary_header = (
+            f"*总分析内容: {total_chars:,} 字符，{len(summary_parts)} 个步骤*\n\n"
+        )
+        full_content = "\n\n".join(summary_parts) if summary_parts else "无有效分析内容"
+
+        return summary_header + full_content
+
+    def _calculate_auto_quality_score(
+        self, content: str, metadata: Dict[str, Any] = None
+    ) -> float:
+        """
+        Calculate automatic quality score based on content characteristics
+        """
+        if not content or len(content.strip()) < 10:
+            return 1.0
+
+        score = 5.0  # Base score
+
+        # Content length factor (more comprehensive analysis gets higher score)
+        length_factor = min(len(content) / 1000.0, 3.0)  # Max 3 points for length
+        score += length_factor
+
+        # Structure and organization factor
+        if "##" in content or "###" in content:  # Has headers
+            score += 0.5
+        if content.count("\n") > 5:  # Well-structured with line breaks
+            score += 0.5
+
+        # Content quality indicators
+        quality_keywords = [
+            "分析",
+            "结论",
+            "建议",
+            "评估",
+            "总结",
+            "洞察",
+            "发现",
+            "策略",
+        ]
+        keyword_count = sum(1 for keyword in quality_keywords if keyword in content)
+        score += min(keyword_count * 0.2, 1.0)  # Max 1 point for keywords
+
+        # Metadata quality indicators
+        if metadata:
+            if metadata.get("citations"):
+                score += 0.5  # Has citations
+            if metadata.get("evidence_count", 0) > 0:
+                score += 0.5  # Has evidence
+
+        return min(score, 10.0)  # Cap at 10.0
+
+    def export_session_to_markdown(
+        self, session_id: str, export_path: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Export complete session analysis to Markdown file
+
+        This function provides full, untruncated access to all analysis content
+        for offline reading and further LLM processing.
+
+        Args:
+            session_id: The session to export
+            export_path: Optional custom file path (defaults to auto-generated name)
+
+        Returns:
+            Dict with export status and file information
+        """
+        try:
+            # Get session and validate
+            session = self.session_manager.get_session(session_id)
+            if not session:
+                return {
+                    "success": False,
+                    "error": f"Session {session_id} not found",
+                    "file_path": None,
+                }
+
+            # Get all detailed content
+            detailed_step_contents = self._extract_detailed_step_contents(session_id)
+            quality_metrics = self._calculate_comprehensive_quality_metrics(session)
+            session_summary = self._generate_detailed_session_summary(session)
+            thinking_trace = self.session_manager.get_full_trace(session_id)
+
+            # Generate filename if not provided
+            if not export_path:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_topic = "".join(
+                    c for c in session.topic[:50] if c.isalnum() or c in (" ", "-", "_")
+                ).strip()
+                safe_topic = safe_topic.replace(" ", "_")
+                export_path = f"deep_thinking_session_{session_id[:8]}_{timestamp}_{safe_topic}.md"
+
+            # Build comprehensive Markdown content
+            markdown_content = self._build_markdown_report(
+                session=session,
+                detailed_step_contents=detailed_step_contents,
+                quality_metrics=quality_metrics,
+                session_summary=session_summary,
+                thinking_trace=thinking_trace,
+            )
+
+            # Write to file
+            from pathlib import Path
+
+            file_path = Path(export_path)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(markdown_content)
+
+            # Calculate file statistics
+            file_size = file_path.stat().st_size
+            content_lines = markdown_content.count("\n") + 1
+            content_words = len(markdown_content.split())
+
+            logger.info(f"Successfully exported session {session_id} to {file_path}")
+            logger.info(
+                f"Export stats: {file_size:,} bytes, {content_lines:,} lines, {content_words:,} words"
+            )
+
+            return {
+                "success": True,
+                "file_path": str(file_path.absolute()),
+                "file_size_bytes": file_size,
+                "content_lines": content_lines,
+                "content_words": content_words,
+                "session_id": session_id,
+                "export_timestamp": datetime.now().isoformat(),
+            }
+
+        except Exception as e:
+            logger.error(f"Error exporting session {session_id} to Markdown: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "file_path": export_path,
+                "session_id": session_id,
+            }
+
+    def _build_markdown_report(
+        self,
+        session: SessionState,
+        detailed_step_contents: Dict[str, Any],
+        quality_metrics: Dict[str, Any],
+        session_summary: Dict[str, Any],
+        thinking_trace: Dict[str, Any],
+    ) -> str:
+        """
+        Build comprehensive Markdown report with complete content
+        """
+        lines = []
+
+        # Header with metadata
+        lines.extend(
+            [
+                "# 深度思考会话完整报告",
+                "",
+                f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"**会话ID**: `{session.session_id}`",
+                "**导出版本**: 完整无截断版本",
+                "",
+                "---",
+                "",
+            ]
+        )
+
+        # Session metadata
+        lines.extend(
+            [
+                "## 📊 会话元数据",
+                "",
+                "| 属性 | 值 |",
+                "|------|-----|",
+                f"| **主题** | {session.topic} |",
+                f"| **思考流程** | {session.flow_type} |",
+                f"| **会话时长** | {session_summary.get('session_duration', 0):.2f} 分钟 |",
+                f"| **执行步骤** | {session_summary.get('total_steps', 0)} 个 |",
+                f"| **平均质量得分** | {quality_metrics.get('average_quality', 0):.2f}/10 |",
+                f"| **质量趋势** | {quality_metrics.get('quality_trend', 'unknown')} |",
+                "",
+            ]
+        )
+
+        # Quality metrics details
+        if quality_metrics.get("step_quality_breakdown"):
+            lines.extend(
+                [
+                    "### 📈 详细质量评分",
+                    "",
+                    "| 步骤 | 质量得分 |",
+                    "|------|----------|",
+                ]
+            )
+            for step_name, score in quality_metrics["step_quality_breakdown"].items():
+                lines.append(f"| {step_name} | {score:.3f}/10 |")
+            lines.append("")
+
+        # Complete analysis content
+        lines.extend(
+            [
+                "## 🔍 完整分析过程",
+                "",
+                "> 以下是完整的、未经截断的分析内容，可供进一步的LLM分析和洞察提取。",
+                "",
+            ]
+        )
+
+        # Add each step's complete content
+        for step_name, contents in detailed_step_contents.items():
+            if not contents:
+                continue
+
+            lines.extend([f"### 📋 {step_name}", ""])
+
+            # Add step metadata
+            main_content = ""
+            metadata = {}
+            for content_data in contents:
+                if content_data.get("result_type") == "output":
+                    main_content = content_data.get("content", "")
+                    metadata = content_data.get("metadata", {})
+                    break
+
+            if not main_content and contents:
+                main_content = contents[0].get("content", "")
+                metadata = contents[0].get("metadata", {})
+
+            # Add content statistics
+            if main_content:
+                char_count = len(main_content)
+                word_count = len(main_content.split())
+                lines.extend(
+                    [
+                        f"**内容统计**: {char_count:,} 字符, {word_count:,} 词",
+                        f"**时间戳**: {contents[0].get('timestamp', 'Unknown')}",
+                        "",
+                    ]
+                )
+
+                # Add metadata if available
+                if metadata:
+                    lines.extend(
+                        [
+                            "**元数据**:",
+                            "```json",
+                            f"{json.dumps(metadata, ensure_ascii=False, indent=2)}",
+                            "```",
+                            "",
+                        ]
+                    )
+
+                # Add the complete content
+                lines.extend(["**完整内容**:", "", main_content, "", "---", ""])
+
+        # Session context
+        if session.context:
+            lines.extend(
+                [
+                    "## 🏷️ 会话上下文",
+                    "",
+                    "```json",
+                    f"{json.dumps(session.context, ensure_ascii=False, indent=2)}",
+                    "```",
+                    "",
+                ]
+            )
+
+        # Footer
+        lines.extend(
+            [
+                "---",
+                "",
+                "## 📋 使用说明",
+                "",
+                "1. **完整内容**: 本报告包含所有原始分析内容，无任何截断",
+                "2. **LLM分析**: 可直接将此文件提供给LLM进行二次分析和洞察提取",
+                "3. **引用方式**: 在新的对话中引用此文件进行深度讨论",
+                "4. **格式**: 标准Markdown格式，支持所有Markdown渲染器",
+                "",
+                "*此报告由深度思考引擎自动生成，确保内容完整性和可用性。*",
+            ]
+        )
+
+        return "\n".join(lines)
+
+    def _refresh_session_quality_data(self, session: SessionState) -> None:
+        """
+        Refresh session quality data from database to ensure completeness
+        This ensures we have the most up-to-date quality scores for reporting
+        """
+        try:
+            # Get all steps and their results from database
+            steps = self.session_manager.db.get_session_steps(session.session_id)
+
+            # Update session quality scores with any missing data
+            for step in steps:
+                step_name = step.get("step_name")
+                quality_score = step.get("quality_score")
+
+                if step_name and quality_score is not None:
+                    # Update session quality scores if not already present
+                    if step_name not in session.quality_scores:
+                        session.quality_scores[step_name] = quality_score
+                        logger.info(
+                            f"Refreshed quality score for {step_name}: {quality_score:.1f}"
+                        )
+
+            # Update the session cache
+            self.session_manager._active_sessions[session.session_id] = session
+
+        except Exception as e:
+            logger.warning(f"Error refreshing session quality data: {e}")
+
     def _build_comprehensive_summary_params(
         self,
         session: SessionState,
@@ -1644,7 +2094,15 @@ class MCPTools:
         thinking_trace: Dict[str, Any],
         final_insights: Optional[str],
     ) -> Dict[str, Any]:
-        """Build comprehensive parameters for the summary template"""
+        """Build comprehensive parameters for the summary template with detailed content"""
+
+        # Extract detailed step contents from database
+        detailed_step_contents = self._extract_detailed_step_contents(
+            session.session_id
+        )
+
+        # Build comprehensive step analysis summary
+        step_analysis = self._build_step_analysis_summary(detailed_step_contents)
 
         # Format quality metrics for display
         quality_display = self._format_quality_metrics_for_display(quality_metrics)
@@ -1676,6 +2134,10 @@ class MCPTools:
                 else "无"
             ),
             "session_context": session.context,
+            # Enhanced content fields for comprehensive summary
+            "detailed_step_contents": detailed_step_contents,
+            "step_analysis_summary": step_analysis,
+            "comprehensive_analysis": step_analysis,  # Alias for template compatibility
         }
 
     def _format_quality_metrics_for_display(

@@ -212,6 +212,24 @@ class DeepThinkingMCPServer:
                         "required": ["session_id"],
                     },
                 ),
+                Tool(
+                    name="export_session_markdown",
+                    description="导出完整会话分析到Markdown文件（完整无截断版本）",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "要导出的思考会话ID",
+                            },
+                            "export_path": {
+                                "type": "string",
+                                "description": "导出文件路径（可选，默认自动生成）",
+                            },
+                        },
+                        "required": ["session_id"],
+                    },
+                ),
             ]
 
         @self.server.call_tool()
@@ -235,6 +253,51 @@ class DeepThinkingMCPServer:
                 elif name == "complete_thinking":
                     input_data = CompleteThinkingInput(**arguments)
                     result = self.mcp_tools.complete_thinking(input_data)
+
+                elif name == "export_session_markdown":
+                    session_id = arguments.get("session_id")
+                    export_path = arguments.get("export_path")
+
+                    if not session_id:
+                        raise McpError(
+                            "session_id is required for export_session_markdown"
+                        )
+
+                    result = self.mcp_tools.export_session_to_markdown(
+                        session_id, export_path
+                    )
+
+                    # Format export result for MCP response
+                    if result.get("success"):
+                        response_content = json.dumps(
+                            {
+                                "success": True,
+                                "message": f"Successfully exported session to {result['file_path']}",
+                                "export_details": {
+                                    "file_path": result["file_path"],
+                                    "file_size_bytes": result["file_size_bytes"],
+                                    "content_lines": result["content_lines"],
+                                    "content_words": result["content_words"],
+                                    "session_id": result["session_id"],
+                                    "export_timestamp": result["export_timestamp"],
+                                },
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                    else:
+                        response_content = json.dumps(
+                            {
+                                "success": False,
+                                "error": result.get("error", "Unknown export error"),
+                                "session_id": session_id,
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+
+                    logger.info(f"Export tool executed: {result.get('success', False)}")
+                    return [TextContent(type="text", text=response_content)]
 
                 else:
                     raise McpError(f"Unknown tool: {name}")

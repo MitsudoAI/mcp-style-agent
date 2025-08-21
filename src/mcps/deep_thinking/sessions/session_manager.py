@@ -170,10 +170,10 @@ class SessionManager:
 
             if step_result:
                 session.step_results[step_name] = step_result
-                
+
                 # Handle special cases for structured for_each tracking
                 self._handle_special_step_results(session, step_name, step_result)
-                
+
                 # NOTE: Do NOT increment for_each iteration here to avoid double counting
                 # The increment should only happen when explicitly processing a for_each step
 
@@ -210,6 +210,51 @@ class SessionManager:
             logger.error(f"Error updating session {session_id}: {e}")
             return False
 
+    def _calculate_auto_quality_score(
+        self, content: str, metadata: Dict[str, Any] = None
+    ) -> float:
+        """
+        Calculate automatic quality score based on content characteristics
+        Simple quality scoring for session manager (avoids circular dependencies)
+        """
+        if not content or len(content.strip()) < 10:
+            return 2.0
+
+        score = 5.0  # Base score
+
+        # Content length factor (more comprehensive analysis gets higher score)
+        length_factor = min(len(content) / 1000.0, 3.0)  # Max 3 points for length
+        score += length_factor
+
+        # Structure and organization factor
+        if "##" in content or "###" in content:  # Has headers
+            score += 0.5
+        if content.count("\n") > 5:  # Well-structured with line breaks
+            score += 0.5
+
+        # Content quality indicators
+        quality_keywords = [
+            "分析",
+            "结论",
+            "建议",
+            "评估",
+            "总结",
+            "洞察",
+            "发现",
+            "策略",
+        ]
+        keyword_count = sum(1 for keyword in quality_keywords if keyword in content)
+        score += min(keyword_count * 0.2, 1.0)  # Max 1 point for keywords
+
+        # Metadata quality indicators
+        if metadata:
+            if metadata.get("citations"):
+                score += 0.5  # Has citations
+            if metadata.get("evidence_count", 0) > 0:
+                score += 0.5  # Has evidence
+
+        return min(score, 10.0)  # Cap at 10.0
+
     def add_step_result(
         self,
         session_id: str,
@@ -222,7 +267,7 @@ class SessionManager:
         quality_score: Optional[float] = None,
     ) -> bool:
         """
-        Add detailed result to a step
+        Add detailed result to a step with automatic quality scoring
 
         Args:
             session_id: Session identifier
@@ -232,17 +277,32 @@ class SessionManager:
             metadata: Additional metadata
             quality_indicators: Quality assessment data
             citations: Citation information
+            quality_score: Manual quality score (if not provided, will be auto-calculated)
 
         Returns:
             True if successful
         """
         try:
+            # Auto-calculate quality score if not provided and this is meaningful content
+            if quality_score is None and result_type == "output" and result_content:
+                quality_score = self._calculate_auto_quality_score(
+                    result_content, metadata
+                )
+                logger.info(
+                    f"Auto-calculated quality score for {step_name}: {quality_score:.1f}"
+                )
             # Handle for_each iteration tracking - only increment when explicitly marked
             session = self.get_session(session_id)
-            if metadata and metadata.get("for_each_continuation") and metadata.get("should_increment_iteration", False):
+            if (
+                metadata
+                and metadata.get("for_each_continuation")
+                and metadata.get("should_increment_iteration", False)
+            ):
                 self._increment_for_each_iteration(session, step_name)
-                logger.info(f"Incremented for_each iteration for {step_name} due to explicit flag")
-            
+                logger.info(
+                    f"Incremented for_each iteration for {step_name} due to explicit flag"
+                )
+
             # Get the step ID, create step if it doesn't exist
             steps = self.db.get_session_steps(session_id)
             step_id = None
@@ -1651,10 +1711,12 @@ class SessionManager:
             logger.error(f"Error repairing session {session_id}: {e}")
             return False
 
-    def _handle_special_step_results(self, session: "SessionState", step_name: str, step_result: str) -> None:
+    def _handle_special_step_results(
+        self, session: "SessionState", step_name: str, step_result: str
+    ) -> None:
         """
         Handle special processing for step results that need structured tracking
-        
+
         Args:
             session: Session state to update
             step_name: Name of the step
@@ -1664,27 +1726,35 @@ class SessionManager:
             # Handle decomposition step - store structured result for for_each tracking
             if step_name == "decompose" or "decompose" in step_name:
                 self._extract_decomposition_result(session, step_result)
-            
+
             # ALSO: Check if the step_result itself contains decomposition data (regardless of step name)
             # This handles cases where decomposition data comes from previous steps
-            if session.decomposition_result is None and self._contains_decomposition_data(step_result):
+            if (
+                session.decomposition_result is None
+                and self._contains_decomposition_data(step_result)
+            ):
                 logger.info("Found decomposition data in step result, extracting...")
                 self._extract_decomposition_result(session, step_result)
-                
+
         except Exception as e:
             logger.error(f"Error handling special step result for {step_name}: {e}")
 
-    def _extract_decomposition_result(self, session: "SessionState", step_result: str) -> None:
+    def _extract_decomposition_result(
+        self, session: "SessionState", step_result: str
+    ) -> None:
         """
         Extract and store decomposition result for for_each iteration tracking
         """
         try:
             import json
-            
+
             # Try to parse as JSON first
             try:
                 decomposition_data = json.loads(step_result.strip())
-                if isinstance(decomposition_data, dict) and "sub_questions" in decomposition_data:
+                if (
+                    isinstance(decomposition_data, dict)
+                    and "sub_questions" in decomposition_data
+                ):
                     session.decomposition_result = decomposition_data
                     sub_questions = decomposition_data["sub_questions"]
                     if isinstance(sub_questions, list):
@@ -1692,40 +1762,46 @@ class SessionManager:
                         # Set up for_each tracking for collect_evidence step
                         session.total_iterations["collect_evidence"] = total_count
                         session.iteration_count["collect_evidence"] = 0
-                        logger.info(f"Stored decomposition with {total_count} sub-questions")
+                        logger.info(
+                            f"Stored decomposition with {total_count} sub-questions"
+                        )
                         return
             except (json.JSONDecodeError, ValueError):
                 logger.debug("Step result is not valid JSON, trying text extraction")
-            
+
             # Fallback: Extract from text using patterns
             import re
-            
+
             # Look for numbered questions or SQ patterns
-            numbered_matches = re.findall(r'(\d+)\.\s+[^0-9]', step_result)
-            sq_matches = re.findall(r'SQ(\d+)', step_result)
-            
+            numbered_matches = re.findall(r"(\d+)\.\s+[^0-9]", step_result)
+            sq_matches = re.findall(r"SQ(\d+)", step_result)
+
             if numbered_matches or sq_matches:
                 # Use the pattern that gives more matches
                 if len(numbered_matches) >= len(sq_matches):
                     question_count = len(set(numbered_matches))
                 else:
                     question_count = len(set(sq_matches))
-                
+
                 if question_count > 0:
                     # Create a basic decomposition structure
                     session.decomposition_result = {
-                        "sub_questions": [{"id": f"SQ{i+1}", "question": f"Sub-question {i+1}"} 
-                                        for i in range(question_count)],
-                        "extracted_from_text": True
+                        "sub_questions": [
+                            {"id": f"SQ{i+1}", "question": f"Sub-question {i+1}"}
+                            for i in range(question_count)
+                        ],
+                        "extracted_from_text": True,
                     }
                     session.total_iterations["collect_evidence"] = question_count
                     session.iteration_count["collect_evidence"] = 0
                     logger.info(f"Extracted {question_count} sub-questions from text")
-                    
+
         except Exception as e:
             logger.error(f"Error extracting decomposition result: {e}")
 
-    def _increment_for_each_iteration(self, session: "SessionState", step_name: str) -> None:
+    def _increment_for_each_iteration(
+        self, session: "SessionState", step_name: str
+    ) -> None:
         """
         Increment the for_each iteration count for a step
         CRITICAL: This should only be called when actually processing a new sub-question
@@ -1733,20 +1809,24 @@ class SessionManager:
         try:
             current_count = session.iteration_count.get(step_name, 0)
             total = session.total_iterations.get(step_name, 0)
-            
+
             # Safety check: don't increment beyond total
             if current_count >= total:
-                logger.warning(f"Attempted to increment {step_name} beyond total iterations: {current_count}/{total}")
+                logger.warning(
+                    f"Attempted to increment {step_name} beyond total iterations: {current_count}/{total}"
+                )
                 return
-                
+
             new_count = current_count + 1
             session.iteration_count[step_name] = new_count
-            
-            logger.info(f"INCREMENTED {step_name} iteration: {current_count} -> {new_count}/{total}")
-            
+
+            logger.info(
+                f"INCREMENTED {step_name} iteration: {current_count} -> {new_count}/{total}"
+            )
+
             # Update the session in cache and database immediately
             self._active_sessions[session.session_id] = session
-            
+
             # Also update database to prevent state loss
             if self.db:
                 try:
@@ -1757,11 +1837,13 @@ class SessionManager:
                             "iteration_count": session.iteration_count,
                             "total_iterations": session.total_iterations,
                             "last_increment_timestamp": datetime.now().isoformat(),
-                        }
+                        },
                     )
                 except Exception as db_error:
-                    logger.error(f"Failed to persist iteration state to database: {db_error}")
-            
+                    logger.error(
+                        f"Failed to persist iteration state to database: {db_error}"
+                    )
+
         except Exception as e:
             logger.error(f"Error incrementing for_each iteration for {step_name}: {e}")
 
@@ -1773,15 +1855,15 @@ class SessionManager:
             # Currently we know collect_evidence is a for_each step
             # In the future, this could be more dynamic based on flow configuration
             for_each_steps = ["collect_evidence"]
-            
+
             # Also check if we have tracking data set up for this step
             has_tracking = (
-                session.total_iterations.get(step_name, 0) > 0 or 
-                session.decomposition_result is not None
+                session.total_iterations.get(step_name, 0) > 0
+                or session.decomposition_result is not None
             )
-            
+
             return step_name in for_each_steps and has_tracking
-            
+
         except Exception as e:
             logger.error(f"Error checking if step is for_each: {e}")
             return False
@@ -1792,7 +1874,7 @@ class SessionManager:
         """
         try:
             import json
-            
+
             # Check for JSON with sub_questions
             try:
                 data = json.loads(step_result.strip())
@@ -1800,22 +1882,26 @@ class SessionManager:
                     return True
             except (json.JSONDecodeError, ValueError):
                 pass
-            
+
             # Check for text patterns indicating decomposition
             decomposition_patterns = [
                 "sub_questions",
-                "SQ1", "SQ2", "SQ3",  # Sub-question IDs
-                '"id".*"question"',   # JSON structure
-                "子问题", "分解"
+                "SQ1",
+                "SQ2",
+                "SQ3",  # Sub-question IDs
+                '"id".*"question"',  # JSON structure
+                "子问题",
+                "分解",
             ]
-            
+
             import re
+
             for pattern in decomposition_patterns:
                 if re.search(pattern, step_result, re.IGNORECASE):
                     return True
-            
+
             return False
-            
+
         except Exception as e:
             logger.error(f"Error checking for decomposition data: {e}")
             return False
