@@ -2208,15 +2208,19 @@ class MCPTools:
             Generated filename string
         """
         try:
-            # Get configuration with defaults
-            config = self.config_manager.get_config()
+            # Get configuration with defaults - get the entire config tree
+            # First try to get system config, then fallback to entire config
+            config = self.config_manager.config_data  # Direct access to full config
             export_config = config.get("export", {})
             file_naming = export_config.get("file_naming", {})
             
-            pattern = file_naming.get("pattern", "{timestamp}_{topic}.md")
+            pattern = file_naming.get("pattern", "{topic}_{timestamp}.md")
             max_topic_length = file_naming.get("max_topic_length", 20)
             include_session_id = file_naming.get("include_session_id", False)
             sanitize_topic = file_naming.get("sanitize_topic", True)
+            
+            logger.debug(f"File naming config - pattern: {pattern}, max_length: {max_topic_length}")
+            logger.debug(f"Custom title provided: {custom_title}")
             
             # Generate components
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2245,6 +2249,7 @@ class MCPTools:
             }
             
             # Apply pattern with replacements
+            logger.debug(f"Applying pattern '{pattern}' with replacements: {replacements}")
             filename = pattern.format(**replacements)
             
             # Ensure .md extension if not present
