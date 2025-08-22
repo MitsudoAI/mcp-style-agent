@@ -2265,18 +2265,16 @@ class MCPTools:
             if not filename.endswith('.md'):
                 filename += '.md'
                 
-            logger.debug(f"Generated filename: {filename} from pattern: {pattern}")
+            logger.info(f"✅ Generated filename: {filename} from pattern: {pattern}")
+            logger.info(f"✅ Custom title: {custom_title}")
             return filename
             
         except Exception as e:
-            import traceback
-            logger.error(f"Error generating filename: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            logger.error(f"Custom title: {custom_title}")
-            logger.error(f"Session: {session}")
-            logger.error(f"Session type: {type(session)}")
+            logger.error(f"❌ FILENAME GENERATION FAILED: {e}")
+            logger.error(f"Custom title was: {custom_title}")
             # Fallback to simple timestamp-based name
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            logger.error(f"🔄 Using fallback filename: {timestamp}_analysis.md")
             return f"{timestamp}_analysis.md"
 
     def export_session_to_markdown(
