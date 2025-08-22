@@ -84,7 +84,7 @@ class DeepThinkingMCPServer:
             self.template_manager = TemplateManager(str(templates_path))
             self.flow_manager = FlowManager()
             self.mcp_tools = MCPTools(
-                self.session_manager, self.template_manager, self.flow_manager
+                self.session_manager, self.template_manager, self.flow_manager, self.config_manager
             )
         except Exception as e:
             logger.error(f"Failed to initialize MCP server components: {e}")

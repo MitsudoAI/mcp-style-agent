@@ -51,10 +51,12 @@ class MCPTools:
         session_manager: SessionManager,
         template_manager: TemplateManager,
         flow_manager: FlowManager,
+        config_manager=None,
     ):
         self.session_manager = session_manager
         self.template_manager = template_manager
         self.flow_manager = flow_manager
+        self.config_manager = config_manager
         self.error_handler = MCPErrorHandler(session_manager, template_manager)
         # Track active sessions to prevent state inconsistencies
         self._active_sessions = {}
@@ -2209,10 +2211,17 @@ class MCPTools:
         """
         try:
             # Get configuration with defaults - get the entire config tree
-            # First try to get system config, then fallback to entire config
-            config = self.config_manager.config_data  # Direct access to full config
+            if not self.config_manager:
+                logger.debug("Config manager not available, using defaults")
+                config = {}
+            else:
+                config = self.config_manager.config_data  # Direct access to full config
+                logger.debug(f"Config data keys: {list(config.keys()) if config else 'None'}")
+            
             export_config = config.get("export", {})
+            logger.debug(f"Export config: {export_config}")
             file_naming = export_config.get("file_naming", {})
+            logger.debug(f"File naming config: {file_naming}")
             
             pattern = file_naming.get("pattern", "{topic}_{timestamp}.md")
             max_topic_length = file_naming.get("max_topic_length", 20)
@@ -2260,7 +2269,12 @@ class MCPTools:
             return filename
             
         except Exception as e:
+            import traceback
             logger.error(f"Error generating filename: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Custom title: {custom_title}")
+            logger.error(f"Session: {session}")
+            logger.error(f"Session type: {type(session)}")
             # Fallback to simple timestamp-based name
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             return f"{timestamp}_analysis.md"
