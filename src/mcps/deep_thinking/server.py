@@ -226,6 +226,10 @@ class DeepThinkingMCPServer:
                                 "type": "string",
                                 "description": "导出文件路径（可选，默认自动生成）",
                             },
+                            "custom_title": {
+                                "type": "string",
+                                "description": "自定义简洁标题（推荐20字符以内，替代自动提取的冗长topic）",
+                            },
                         },
                         "required": ["session_id"],
                     },
@@ -257,6 +261,7 @@ class DeepThinkingMCPServer:
                 elif name == "export_session_markdown":
                     session_id = arguments.get("session_id")
                     export_path = arguments.get("export_path")
+                    custom_title = arguments.get("custom_title")
 
                     if not session_id:
                         raise McpError(
@@ -264,7 +269,7 @@ class DeepThinkingMCPServer:
                         )
 
                     result = self.mcp_tools.export_session_to_markdown(
-                        session_id, export_path
+                        session_id, export_path, custom_title
                     )
 
                     # Format export result for MCP response

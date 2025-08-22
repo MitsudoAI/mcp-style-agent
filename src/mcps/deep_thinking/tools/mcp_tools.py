@@ -9,6 +9,7 @@ These tools follow the zero-cost principle:
 
 import json
 import logging
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -2195,8 +2196,72 @@ class MCPTools:
             
         return result
 
+    def _generate_export_filename(self, session, custom_title: Optional[str] = None) -> str:
+        """
+        Generate export filename based on configuration
+        
+        Args:
+            session: Session state object
+            custom_title: Optional concise title from Host (20 chars or less recommended)
+            
+        Returns:
+            Generated filename string
+        """
+        try:
+            # Get configuration with defaults
+            config = self.config_manager.get_config()
+            export_config = config.get("export", {})
+            file_naming = export_config.get("file_naming", {})
+            
+            pattern = file_naming.get("pattern", "{timestamp}_{topic}.md")
+            max_topic_length = file_naming.get("max_topic_length", 20)
+            include_session_id = file_naming.get("include_session_id", False)
+            sanitize_topic = file_naming.get("sanitize_topic", True)
+            
+            # Generate components
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Use custom title if provided, otherwise extract from session topic
+            if custom_title:
+                topic = custom_title[:max_topic_length].strip()
+            else:
+                topic = session.topic[:max_topic_length].strip() if hasattr(session, 'topic') and session.topic else "untitled"
+            
+            # Sanitize topic if enabled
+            if sanitize_topic:
+                # More inclusive sanitization that preserves Unicode characters (Chinese, etc.)
+                # Remove only problematic filename characters
+                # Keep alphanumeric (including Unicode), spaces, hyphens, underscores
+                topic = re.sub(r'[<>:"/\\|?*]', '', topic)  # Remove Windows forbidden chars
+                topic = re.sub(r'[\x00-\x1f\x7f]', '', topic)  # Remove control characters
+                topic = topic.replace(" ", "_").strip() if topic.strip() else "untitled"
+            
+            # Prepare replacement variables
+            replacements = {
+                "timestamp": timestamp,
+                "topic": topic,
+                "session_id": session.session_id if hasattr(session, 'session_id') else "unknown",
+                "session_id_short": (session.session_id[:8] if hasattr(session, 'session_id') else "unknown"),
+            }
+            
+            # Apply pattern with replacements
+            filename = pattern.format(**replacements)
+            
+            # Ensure .md extension if not present
+            if not filename.endswith('.md'):
+                filename += '.md'
+                
+            logger.debug(f"Generated filename: {filename} from pattern: {pattern}")
+            return filename
+            
+        except Exception as e:
+            logger.error(f"Error generating filename: {e}")
+            # Fallback to simple timestamp-based name
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            return f"{timestamp}_analysis.md"
+
     def export_session_to_markdown(
-        self, session_id: str, export_path: Optional[str] = None
+        self, session_id: str, export_path: Optional[str] = None, custom_title: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Export complete session analysis to Markdown file with intelligent directory management
@@ -2208,6 +2273,7 @@ class MCPTools:
         Args:
             session_id: The session to export
             export_path: Optional custom file path (defaults to auto-generated name in export directory)
+            custom_title: Optional concise title from Host (overrides topic extraction)
 
         Returns:
             Dict with export status and file information
@@ -2251,13 +2317,8 @@ class MCPTools:
                 for warning in validation["warnings"]:
                     logger.warning(warning)
                 
-                # Generate filename
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                safe_topic = "".join(
-                    c for c in session.topic[:50] if c.isalnum() or c in (" ", "-", "_")
-                ).strip()
-                safe_topic = safe_topic.replace(" ", "_") if safe_topic else "untitled"
-                filename = f"deep_thinking_session_{session_id[:8]}_{timestamp}_{safe_topic}.md"
+                # Generate filename using configuration
+                filename = self._generate_export_filename(session, custom_title)
                 file_path = export_dir / filename
                 
                 logger.info(f"Auto-generated export path: {file_path}")

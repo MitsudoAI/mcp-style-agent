@@ -87,9 +87,15 @@ export:
   
   # File naming pattern
   file_naming:
-    pattern: "deep_thinking_session_{session_id}_{timestamp}_{topic}.md"
+    # Available patterns:
+    # - "{timestamp}_{topic}.md" (recommended: concise, chronological)
+    # - "{topic}_{timestamp}.md" (topic-first ordering)
+    # - "{session_id_short}_{topic}.md" (session ID prefix, 8 chars)
+    # - "{timestamp}.md" (timestamp only, minimal)
+    pattern: "{topic}_{timestamp}.md"
     sanitize_topic: true    # Remove special characters from topic
-    max_topic_length: 50    # Truncate long topics
+    max_topic_length: 20    # Truncate long topics (recommend Host provides concise title)
+    include_session_id: false # Session ID is unique but creates very long filenames
     
   # Directory validation
   warn_git_pollution: true  # Warn if export dir is inside git repo
